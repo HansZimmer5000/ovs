@@ -34,11 +34,11 @@ m4_define([OVN_CHECK_PACKETS],
 AT_BANNER([OVN components])
 
 AT_SETUP([ovn -- DD_111])
-AT_CHECK([echo 0], [0], [[0]], [[]])
+AT_CHECK([echo 0], [0], [0])
 AT_CLEANUP
 
 AT_SETUP([ovn -- DD_222])
-AT_CHECK([echo 0], [1], [[0]], [[]])
+AT_CHECK([echo 0], [1], [[0]], [[stdout]])
 AT_CLEANUP
 
 AT_SETUP([ovn -- DD_333])
