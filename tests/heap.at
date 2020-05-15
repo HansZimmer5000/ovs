@@ -29,7 +29,8 @@ AT_CLEANUP
 
 # ???
 AT_SETUP([custom -- 4])
-AT_CHECK([echo 3], [], [3])
+AT_CHECK([echo 3], [], [3
+])
 AT_CLEANUP
 
 # Fail
