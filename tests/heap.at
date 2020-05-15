@@ -44,5 +44,20 @@ AT_CLEANUP
 
 # ???
 AT_SETUP([custom -- 7])
-AT_CHECK([echo 3], [3], [])
+AT_CHECK([echo 3], [0], [])
+AT_CLEANUP
+
+# ???
+AT_SETUP([custom -- 8])
+AT_CHECK([echo 3], [0], [ 3])
+AT_CLEANUP
+
+# ???
+AT_SETUP([custom -- 9])
+AT_CHECK([echo 3], [0], ["3"])
+AT_CLEANUP
+
+# ???
+AT_SETUP([custom -- 10])
+AT_CHECK([echo 3], [0], [" 3"])
 AT_CLEANUP
