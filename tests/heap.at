@@ -12,53 +12,13 @@ TEST_HEAP([insert-delete-same-order-with-dups])
 TEST_HEAP([raw-insert])
 TEST_HEAP([raw-delete])
 
-# Fail
-AT_SETUP([custom -- 1])
-AT_CHECK([echo 0], [0], [0])
-AT_CLEANUP
-
-# ???
-AT_SETUP([custom -- 2])
-AT_CHECK([echo 3], [0], [3])
-AT_CLEANUP
-
-# ???
-AT_SETUP([custom -- 3])
-AT_CHECK([echo 3], [3], [0])
-AT_CLEANUP
-
-# ???
+# True
 AT_SETUP([custom -- 4])
 AT_CHECK([echo 3], [], [3
 ])
 AT_CLEANUP
 
-# Fail
-AT_SETUP([custom -- 5])
-AT_CHECK([echo 0], [0], [[0]], [[stdout]])
-AT_CLEANUP
-
 # True
 AT_SETUP([custom -- 6])
 AT_CHECK([true])
-AT_CLEANUP
-
-# ???
-AT_SETUP([custom -- 7])
-AT_CHECK([echo 3], [0], [])
-AT_CLEANUP
-
-# ???
-AT_SETUP([custom -- 8])
-AT_CHECK([echo 3], [0], [ 3])
-AT_CLEANUP
-
-# ???
-AT_SETUP([custom -- 9])
-AT_CHECK([echo 3], [0], ["3"])
-AT_CLEANUP
-
-# ???
-AT_SETUP([custom -- 10])
-AT_CHECK([echo 3], [0], [" 3"])
 AT_CLEANUP
