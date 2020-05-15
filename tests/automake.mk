@@ -23,6 +23,7 @@ TESTSUITE_AT = \
 	tests/testsuite.at \
 	tests/completion.at \
 	tests/library.at \
+	tests/asp.at \
 	tests/heap.at \
 	tests/asp.at \
 	tests/bundle.at \
