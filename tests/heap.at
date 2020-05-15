@@ -12,18 +12,37 @@ TEST_HEAP([insert-delete-same-order-with-dups])
 TEST_HEAP([raw-insert])
 TEST_HEAP([raw-delete])
 
-AT_SETUP([ovn -- DD_111])
+# Fail
+AT_SETUP([ovn -- 1])
 AT_CHECK([echo 0], [0], [0])
 AT_CLEANUP
 
-AT_SETUP([ovn -- DD_222])
-AT_CHECK([echo 0], [1], [[0]], [[stdout]])
+# ???
+AT_SETUP([ovn -- 2])
+AT_CHECK([echo 3], [0], [3])
 AT_CLEANUP
 
-AT_SETUP([ovn -- DD_333])
+# ???
+AT_SETUP([ovn -- 3])
+AT_CHECK([echo 3], [3], [0])
+AT_CLEANUP
+
+# ???
+AT_SETUP([ovn -- 4])
+AT_CHECK([echo 3], [], [3])
+AT_CLEANUP
+
+# Fail
+AT_SETUP([ovn -- 5])
 AT_CHECK([echo 0], [0], [[0]], [[stdout]])
 AT_CLEANUP
 
-AT_SETUP([ovn -- DD_444])
+# True
+AT_SETUP([ovn -- 6])
 AT_CHECK([true])
+AT_CLEANUP
+
+# ???
+AT_SETUP([ovn -- 7])
+AT_CHECK([echo 3], [3], [])
 AT_CLEANUP
