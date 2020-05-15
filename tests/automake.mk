@@ -24,6 +24,7 @@ TESTSUITE_AT = \
 	tests/completion.at \
 	tests/library.at \
 	tests/heap.at \
+	tests/asp.at \
 	tests/bundle.at \
 	tests/classifier.at \
 	tests/check-structs.at \

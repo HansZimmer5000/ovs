@@ -11,14 +11,3 @@ TEST_HEAP([insert-delete-every-order])
 TEST_HEAP([insert-delete-same-order-with-dups])
 TEST_HEAP([raw-insert])
 TEST_HEAP([raw-delete])
-
-# True
-AT_SETUP([custom -- 4])
-AT_CHECK([echo 3], [], [3
-])
-AT_CLEANUP
-
-# True
-AT_SETUP([custom -- 6])
-AT_CHECK([true])
-AT_CLEANUP
