@@ -24,6 +24,6 @@ AT_SETUP([ovn -- DD_333])
 AT_CHECK([echo 0], [0], [[0]], [[stdout]])
 AT_CLEANUP
 
-AT_SETUP([ovn -- DD_333])
+AT_SETUP([ovn -- DD_444])
 AT_CHECK([true])
 AT_CLEANUP
