@@ -13,36 +13,36 @@ TEST_HEAP([raw-insert])
 TEST_HEAP([raw-delete])
 
 # Fail
-AT_SETUP([ovn -- 1])
+AT_SETUP([custom_1])
 AT_CHECK([echo 0], [0], [0])
 AT_CLEANUP
 
 # ???
-AT_SETUP([ovn -- 2])
+AT_SETUP([custom_2])
 AT_CHECK([echo 3], [0], [3])
 AT_CLEANUP
 
 # ???
-AT_SETUP([ovn -- 3])
+AT_SETUP([custom_3])
 AT_CHECK([echo 3], [3], [0])
 AT_CLEANUP
 
 # ???
-AT_SETUP([ovn -- 4])
+AT_SETUP([custom_4])
 AT_CHECK([echo 3], [], [3])
 AT_CLEANUP
 
 # Fail
-AT_SETUP([ovn -- 5])
+AT_SETUP([custom_5])
 AT_CHECK([echo 0], [0], [[0]], [[stdout]])
 AT_CLEANUP
 
 # True
-AT_SETUP([ovn -- 6])
+AT_SETUP([custom_6])
 AT_CHECK([true])
 AT_CLEANUP
 
 # ???
-AT_SETUP([ovn -- 7])
+AT_SETUP([custom_7])
 AT_CHECK([echo 3], [3], [])
 AT_CLEANUP
