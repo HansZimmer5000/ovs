@@ -90,7 +90,7 @@ AT_CLEANUP
 
 
 
-AT_SETUP([ASP - Force Reject (OpenFlow 1.4)])
+AT_SETUP([ASP - Force Reject LockSet (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
 # Setup Test Execution and make sure there is no error
@@ -111,6 +111,8 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
  idle_timeout=50, in_port=2,dl_src=00:66:77:88:99:aa actions=output:7
 NXST_FLOW reply:
 ])
+# More info in: ovsdb-server.log
+# Raw Messages in ofproto.at:5343
 
 # 'dnl' seems to act as a comment signal in that DSL.
 dnl Check logs for OpenFlow trace
