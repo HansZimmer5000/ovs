@@ -19,20 +19,25 @@ AT_CLEANUP
 
 # Example Test from ofproto.at:
 AT_SETUP([custom - bundle double open (OpenFlow 1.4)])
-AT_KEYWORDS([monitor])
+AT_KEYWORDS([monitor]) # Additional Tag only used for "-k" flag?
 OVS_VSWITCHD_START
 
 # Start a monitor, use the required protocol version
 ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
-AT_CAPTURE_FILE([monitor.log])
+AT_CAPTURE_FILE([monitor.log]) # TODO
 
 # Send twice an OpenFlow14 message (05), OFPT_BUNDLE_CONTROL (21), length (10), xid (0a)
+# TODO what is barrier, a seperator of single messages?
 ovs-appctl -t ovs-ofctl ofctl/send "05 21 00 10 00 00 00 0a 00 00 00 01 00 00 00 02"
 ovs-appctl -t ovs-ofctl ofctl/barrier
 ovs-appctl -t ovs-ofctl ofctl/send "05 21 00 10 00 00 00 0a 00 00 00 01 00 00 00 02"
 ovs-appctl -t ovs-ofctl ofctl/barrier
-OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl]) # Wait for completion
 
+# Read the created monitor.log, "strip" it and check if the output is equals to what is expected:
+# A send bundle_control and a reply for that, following a barrier_reply. Twice, as sended.
+# Why barrier is only seen with the reply, not with the "send:", I dont know so far.
+# OVS recognizes that the second bundle uses the same bundle_id and fails ("OFPT_ERROR") and sends the request back.
 AT_CHECK([ofctl_strip < monitor.log], [0], [dnl
 send: OFPT_BUNDLE_CONTROL (OF1.4):
  bundle_id=0x1 type=OPEN_REQUEST flags=ordered
