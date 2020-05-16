@@ -45,7 +45,7 @@ AT_CLEANUP
 AT_SETUP([ASP - VoteLock (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
-# TODO What does this do?
+# Setup Test Execution and make sure there is no error
 AT_CHECK([ovs-appctl vlog/set vconn:dbg])
 AT_CHECK([ovs-ofctl --no-names del-flows br0])
 
@@ -64,7 +64,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
 NXST_FLOW reply:
 ])
 
-# TODO What does this mean?
+# 'dnl' seems to act as a comment signal in that DSL.
 dnl Check logs for OpenFlow trace
 
 # Prevent race by waiting for greater or equals one (-ge 1) "NXST_FLOW reply" messages.
