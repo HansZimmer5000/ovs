@@ -90,6 +90,101 @@ AT_CLEANUP
 
 
 
+AT_SETUP([ASP - Force Reject (OpenFlow 1.4)])
+OVS_VSWITCHD_START
+
+# Setup Test Execution and make sure there is no error
+AT_CHECK([ovs-appctl vlog/set vconn:dbg])
+AT_CHECK([ovs-ofctl --no-names del-flows br0])
+
+# Add test flow and modify that I gess should modify something in existence, but as nothing is there yet, it basically does nothing at all and only exists to be a signal as this bundle is a ASP conform bundle.
+AT_DATA([flows.txt], [dnl
+add idle_timeout=50 in_port=2 dl_src=00:66:77:88:99:aa actions=7
+modify_strict table=255 actions=drop
+])
+
+# Insert test flow without error
+AT_CHECK([ovs-ofctl --no-names --bundle add-flows br0 flows.txt])
+
+# Check that test flow was inserted
+AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
+ idle_timeout=50, in_port=2,dl_src=00:66:77:88:99:aa actions=output:7
+NXST_FLOW reply:
+])
+
+# 'dnl' seems to act as a comment signal in that DSL.
+dnl Check logs for OpenFlow trace
+
+# Prevent race by waiting for greater or equals one (-ge 1) "NXST_FLOW reply" messages.
+OVS_WAIT_UNTIL([vconn_sub < ovs-vswitchd.log | test `grep -- "|vconn|DBG|unix: sent (Success): NXST_FLOW reply" | wc -l` -ge 1])
+
+# Check if anyting was alright.
+AT_CHECK([print_vconn_debug | vconn_sub | ofctl_strip], [0], [dnl
+vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
+ version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+vconn|DBG|unix: received: OFPT_HELLO:
+ version bitmap: 0x01
+vconn|DBG|unix: negotiated OpenFlow version 0x01 (we support version 0x07 and earlier, peer supports version 0x01)
+vconn|DBG|unix: received: OFPT_FLOW_MOD: DEL actions=drop
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST:
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY:
+vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
+ version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+vconn|DBG|unix: received: OFPT_HELLO (OF1.4):
+ version bitmap: 0x05
+vconn|DBG|unix: negotiated OpenFlow version 0x05 (we support version 0x07 and earlier, peer supports version 0x05)
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0 type=OPEN_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0 type=OPEN_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0 flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): ADD in_port=2,dl_src=00:66:77:88:99:aa idle:50 actions=output:7
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0 flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): MOD_STRICT actions=drop
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0 type=COMMIT_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0 type=COMMIT_REPLY flags=0
+vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
+ version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+vconn|DBG|unix: received: OFPT_HELLO:
+ version bitmap: 0x01
+vconn|DBG|unix: negotiated OpenFlow version 0x01 (we support version 0x07 and earlier, peer supports version 0x01)
+vconn|DBG|unix: received: NXT_SET_FLOW_FORMAT: format=nxm
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST:
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY:
+vconn|DBG|unix: received: NXST_FLOW request:
+vconn|DBG|unix: sent (Success): NXST_FLOW reply:
+ idle_timeout=50, in_port=2,dl_src=00:66:77:88:99:aa actions=output:7
+])
+
+AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
+br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
+br0<->unix: 2 flow_mods in the last 0 s (1 adds, 1 modifications)
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 AT_SETUP([ASP - Rollback (OpenFlow 1.4)])
 OVS_VSWITCHD_START
@@ -164,6 +259,11 @@ br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+
+
+
+
 
 
 
