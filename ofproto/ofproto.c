@@ -5845,7 +5845,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         * 
     * openflow_mod_requester in here:217, usable directly (uses ofp_header from openflow-common.h:142)
         * req->request->xid;
-    * Lock:
+    * Lock (defined in thread.h):
         * struct ovs_mutex asp_mutex = OVS_MUTEX_INITIALIZER; 
         * ovs_mutex_lock(&asp_mutex);  
         * ovs_mutex_unlock(&asp_mutex);
