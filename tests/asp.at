@@ -113,17 +113,23 @@ ovs-appctl time/stop
 # Byte 15-16:TODO (flags? "ordered"=00 03, "0x130"=01 31)
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
-# FlowMod (flowmod 0x22): 
+# FlowMod: 
+# Byte 2:   Msg Type (bundle_add 0x22)
+# Byte 18:  Msg Type (flow_mod=0e)
 # Byte 21-24:xid (again)
-# Byte 29-32:cookie
+# Byte 25-32:cookie
+# Byte 33-40: ?? No Impact. TODO
 # Byte 41:  table_id (todo error when ff)
+# Byte 42:  command (ADD=0, MOD=1, MOD_STRICT=2)
+# Byte 43-44: Idle Timeout
+# Byte 45-46: Hard Timeout
 # Byte 66:  ??
 # Byte 76:  in_port
 # Byte 146: arp_tpa last byte
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
 05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
-00 00 00 00 00 00 00 00 01 00 00 00 00 00 ff ff \
+00 00 00 00 00 00 00 00 fe 02 00 00 00 00 ff ff \
 ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
 50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
