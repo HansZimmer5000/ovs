@@ -3,6 +3,10 @@ AT_BANNER([ASP library])
 AT_SETUP([ASP - VoteLock (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
+# TODO
+# - How to check whether lock is set and staging area created?
+# - Send Bundle and make sure switch answers with a confirm.
+
 # Setup Test Execution and make sure there is no error
 AT_CHECK([ovs-appctl vlog/set vconn:dbg])
 AT_CHECK([ovs-ofctl --no-names del-flows br0])
@@ -93,6 +97,11 @@ AT_CLEANUP
 AT_SETUP([ASP - Force Reject LockSet (OpenFlow 1.4)])
 AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
+
+# TODO 
+# - How to check if the switch really rejected due a set lock?
+# - Send a bundle before this one which will acquire and set the lock.
+# - Send another bundle which then will reject the update since the lock is set.
 
 # Start a monitor, use the required protocol version
 ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
@@ -190,6 +199,11 @@ AT_CLEANUP
 AT_SETUP([ASP - Force Reject ConflictRules (OpenFlow 1.4)])
 AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
+
+# TODO
+# - How to check if the switch really rejected due to conflicting rules?
+# - Send a bundle before that sets special rules.
+# - Send another bundle that then wants to add rules that will conflict with the rules from before.
 
 # Start a monitor, use the required protocol version
 ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
@@ -292,6 +306,12 @@ AT_CLEANUP
 AT_SETUP([ASP - Rollback (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
+# TODO
+# - How to check whether lock is freed and staging area removed after rollback?
+# - Send a bundle that is not successfull (returns with reject)
+# - send Rollback and make sure the switch answers with Finish. 
+
+
 # Setup Test Execution and make sure there is no error
 AT_CHECK([ovs-appctl vlog/set vconn:dbg])
 AT_CHECK([ovs-ofctl --no-names del-flows br0])
@@ -377,6 +397,11 @@ AT_CLEANUP
 
 AT_SETUP([ASP - Commit (OpenFlow 1.4)])
 OVS_VSWITCHD_START
+
+# TODO
+# - How to check whether lock is freed and staging area is activated after commit?
+# - Send a bundle that is successfull (returns with confirm)
+# - Send Commit and make sure the switch answers with Finish. 
 
 # Setup Test Execution and make sure there is no error
 AT_CHECK([ovs-appctl vlog/set vconn:dbg])
