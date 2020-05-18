@@ -295,6 +295,8 @@ static size_t allocated_ofproto_classes;
 
 /* Global lock that protects all flow table operations. */
 struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
+/* Global lock that protects the ASP operations*/ 
+struct ovs_mutex asp_mutex = OVS_MUTEX_INITIALIZER;
 
 unsigned ofproto_flow_limit = OFPROTO_FLOW_LIMIT_DEFAULT;
 unsigned ofproto_max_idle = OFPROTO_MAX_IDLE_DEFAULT;
@@ -5817,6 +5819,37 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
 {
     struct ofproto_flow_mod ofm;
     enum ofperr error;
+
+    /* TODO
+    * Recognize VoteLock - OFPT_FLOW_MOD + OFPFC_MODIFY_STRICT TableId=255
+        * Check Lock
+        * Acquire Lock and set to xid
+        * Create Staging Area
+        * Answer with Confirm or Reject
+    * Recognize Rollback - OFPT_FLOW_MOD + OFPFC_DELETE_STRICT TableId=255
+        * Remove Staging Area
+        * Free Lock
+        * Answer with Finish
+    * Recognize Commit   - OFPT_FLOW_MOD + OFPFC_DELETE TableId=255
+        * Activate Staging Area
+        * Free Lock 
+        * Answer with Finish
+    * Is this alreay enough? Do I really need a recognition of within the bundles?
+    * Do I need the bundle ID for anything?
+    */
+
+    /* My Doc
+    * ofputil_flow_mod in ofp-util.h:312, usable after ofproto_flow_mod_init
+        * fm->command
+        * fm->table_id
+        * 
+    * openflow_mod_requester in here:217, usable directly (uses ofp_header from openflow-common.h:142)
+        * req->request->xid;
+    * Lock:
+        * struct ovs_mutex asp_mutex = OVS_MUTEX_INITIALIZER; 
+        * ovs_mutex_lock(&asp_mutex);  
+        * ovs_mutex_unlock(&asp_mutex);
+    */
 
     error = ofproto_flow_mod_init(ofproto, &ofm, fm, NULL);
     if (error) {
