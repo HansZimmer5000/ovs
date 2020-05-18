@@ -102,25 +102,27 @@ ovs-appctl time/stop
 # More info in: ovsdb-server.log
 # Raw Messages in ofproto.at:5343,5408
 
-# Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), xid (0x31):
+# Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), bundle id (0x89abcdef):
 # Byte 1:   OF Version (v4=0x05)
 # Byte 2:   Message Type (e.g. OFPT_BUNDLE_CONTROL=0x21 / OFPT_GET_ASYNC_REQUEST=0x1a, flow-mod=0x22)
-# Byte 3-4: Length (count of 16 bytes) (TODO only?)
-# Byte 5-8: TODO
-# Byte 9-12:xid (TODO only?)  
+# Byte 3: TODO
+# Byte 4: message length in bytes
+# Byte 5-8: xid
+# Byte 9-12:bundleid 
 # Byte 13:  TODO
 # Byte 14:  Control_type(open=00, close=02, commit=04)
-# Byte 15-16:TODO 
+# Byte 15-16:TODO (flags? "ordered"=00 03, "0x130"=01 31)
 ovs-appctl -t ovs-ofctl ofctl/send "\
-05 21 00 10 00 00 00 0a 00 00 00 31 00 00 00 03"
+05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
 # FlowMod (flowmod 0x22): 
+# Byte 21-24:xid (again)
 # Byte 41:  table_id (todo error when ff)
 # Byte 66:  ??
 # Byte 76:  in_port
 # Byte 146: arp_tpa last byte
 ovs-appctl -t ovs-ofctl ofctl/send "\
-05 22 00 a0 00 00 00 02 00 00 00 31 00 00 00 03 \
-05 0e 00 90 00 00 00 02 00 00 00 00 00 00 00 00 \
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
 00 00 00 00 00 00 00 00 01 00 00 00 00 00 ff ff \
 ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
@@ -131,29 +133,31 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
 # Close: 
-ovs-appctl -t ovs-ofctl ofctl/send "05 21 00 10 00 00 00 03 00 00 00 31 00 02 00 03"
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 02 00 03"
 # Commit: 
-ovs-appctl -t ovs-ofctl ofctl/send "05 21 00 10 00 00 00 04 00 00 00 31 00 04 00 03"
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
 
 ovs-appctl -t ovs-ofctl ofctl/barrier
 OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 AT_CHECK([ofctl_strip < monitor.log], [], [dnl
 send: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0x31 type=OPEN_REQUEST flags=atomic ordered
+ bundle_id=0x89abcdef type=OPEN_REQUEST flags=atomic ordered
 OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0x31 type=OPEN_REPLY flags=0
+ bundle_id=0x89abcdef type=OPEN_REPLY flags=0
 send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
- bundle_id=0x31 flags=atomic ordered
+ bundle_id=0x89abcdef flags=atomic ordered
 OFPT_FLOW_MOD (OF1.4): ADD table:1 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
 send: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0x31 type=CLOSE_REQUEST flags=atomic ordered
+ bundle_id=0x89abcdef type=CLOSE_REQUEST flags=atomic ordered
 OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0x31 type=CLOSE_REPLY flags=0
+ bundle_id=0x89abcdef type=CLOSE_REPLY flags=0
 send: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0x31 type=COMMIT_REQUEST flags=atomic ordered
+ bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
 OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0x31 type=COMMIT_REPLY flags=0
+ bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
 OFPT_BARRIER_REPLY (OF1.4):
 ])
 
