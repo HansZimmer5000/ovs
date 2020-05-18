@@ -102,10 +102,24 @@ ovs-appctl time/stop
 # More info in: ovsdb-server.log
 # Raw Messages in ofproto.at:5343,5408
 
-# Open OF v1.4(05), OFPT_BUNDLE_CONTROL (21), length (10), xid (0x31):
-ovs-appctl -t ovs-ofctl ofctl/send "05 21 00 10 00 00 00 01 00 00 00 31 00 00 00 03"
-# FlowMod: 
-ovs-appctl -t ovs-ofctl ofctl/send "05 22 00 a0 00 00 00 02 00 00 00 31 00 00 00 03 \
+# Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), xid (0x31):
+# Byte 1:   OF Version (v4=0x05)
+# Byte 2:   Message Type (e.g. OFPT_BUNDLE_CONTROL=0x21 / OFPT_GET_ASYNC_REQUEST=0x1a, flow-mod=0x22)
+# Byte 3-4: Length (count of 16 bytes) (TODO only?)
+# Byte 5-8: TODO
+# Byte 9-12:xid (TODO only?)  
+# Byte 13:  TODO
+# Byte 14:  Control_type(open=00, close=02, commit=04)
+# Byte 15-16:TODO 
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 00 00 00 0a 00 00 00 31 00 00 00 03"
+# FlowMod (flowmod 0x22): 
+# Byte 41:  table_id (todo error when ff)
+# Byte 66:  ??
+# Byte 76:  in_port
+# Byte 146: arp_tpa last byte
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 00 00 00 02 00 00 00 31 00 00 00 03 \
 05 0e 00 90 00 00 00 02 00 00 00 00 00 00 00 00 \
 00 00 00 00 00 00 00 00 01 00 00 00 00 00 ff ff \
 ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
