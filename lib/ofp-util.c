@@ -1643,7 +1643,8 @@ ofputil_decode_flow_mod(struct ofputil_flow_mod *fm,
         fm->table_id = ofm->table_id;
         if (fm->table_id == OFPTT_ALL
             && (oh->version == OFP11_VERSION
-                || (ofm->command != OFPFC_DELETE &&
+                || (ofm->command != OFPFC_MODIFY_STRICT &&
+                    ofm->command != OFPFC_DELETE &&
                     ofm->command != OFPFC_DELETE_STRICT))) {
             return OFPERR_OFPFMFC_BAD_TABLE_ID;
         }
