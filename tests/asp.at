@@ -105,17 +105,17 @@ ovs-appctl time/stop
 # Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), bundle id (0x89abcdef):
 # Byte 1:   OF Version (v4=0x05)
 # Byte 2:   Message Type (e.g. OFPT_BUNDLE_CONTROL=0x21 / OFPT_GET_ASYNC_REQUEST=0x1a, flow-mod=0x22)
-# Byte 3: TODO
-# Byte 4: message length in bytes
+# Byte 3-4: message length in bytes
 # Byte 5-8: xid
 # Byte 9-12:bundleid 
-# Byte 13:  TODO
+# Byte 13:  Cookie
 # Byte 14:  Control_type(open=00, close=02, commit=04)
 # Byte 15-16:TODO (flags? "ordered"=00 03, "0x130"=01 31)
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
 # FlowMod (flowmod 0x22): 
 # Byte 21-24:xid (again)
+# Byte 29-32:cookie
 # Byte 41:  table_id (todo error when ff)
 # Byte 66:  ??
 # Byte 76:  in_port
