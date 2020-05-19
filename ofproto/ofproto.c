@@ -5848,6 +5848,9 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     * Lock (this and concerning lock stuf is defined in thread.h): 
         * pthread_mutex_trylock(&xid_read_mutex);  
         * pthread_mutex_unlock(&xid_read_mutex);
+    * Logging
+        * My Log entries are prepended with "My: "  
+        * VLOG_ERR("My: some text and %s", datapath_name);
     */
 
     error = ofproto_flow_mod_init(ofproto, &ofm, fm, NULL);
@@ -7963,6 +7966,15 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
                                         &ofproto->vl_mff_map, &ofpacts,
                                         u16_to_ofp(ofproto->max_ports),
                                         ofproto->n_tables);
+
+        VLOG_WARN("My: Bundle Add FlowMod Command: %d with tableid: %d and xid: %d\n", fm.command, fm.table_id, oh->xid);
+        int got_lock = pthread_mutex_trylock(&xid_read_mutex);  
+        if (got_lock == 0 && oh->xid != 0) {
+            current_xid = oh->xid;
+        }
+        VLOG_WARN("My: current_xid: %d\n", current_xid);
+
+
         if (!error) {
             error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
         }
