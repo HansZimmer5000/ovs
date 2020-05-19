@@ -156,9 +156,6 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
-# Close: 
-ovs-appctl -t ovs-ofctl ofctl/send "\
-05 21 00 10 01 02 03 04 89 ab cd ef 00 02 00 03"
 # Commit: 
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
