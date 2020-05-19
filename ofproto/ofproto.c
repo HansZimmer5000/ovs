@@ -296,7 +296,8 @@ static size_t allocated_ofproto_classes;
 /* Global lock that protects all flow table operations. */
 struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
 /* Global lock that protects the ASP operations*/ 
-struct ovs_mutex asp_mutex = OVS_MUTEX_INITIALIZER;
+pthread_mutex_t xid_read_mutex = PTHREAD_MUTEX_INITIALIZER;
+int current_xid = 0;
 
 unsigned ofproto_flow_limit = OFPROTO_FLOW_LIMIT_DEFAULT;
 unsigned ofproto_max_idle = OFPROTO_MAX_IDLE_DEFAULT;
@@ -5844,11 +5845,9 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         * fm->table_id
     * openflow_mod_requester in here:217, usable directly (uses ofp_header from openflow-common.h:142)
         * req->request->xid;
-    * Lock (this and concerning lock stuf is defined in thread.h):
-        * Need to adjust ovs_mutext struct or better, create a own specific asp_lock that is able to keep a char / 4 bytes. 
-        * struct ovs_mutex asp_mutex = OVS_MUTEX_INITIALIZER; 
-        * ovs_mutex_lock(&asp_mutex);  
-        * ovs_mutex_unlock(&asp_mutex);
+    * Lock (this and concerning lock stuf is defined in thread.h): 
+        * pthread_mutex_trylock(&xid_read_mutex);  
+        * pthread_mutex_unlock(&xid_read_mutex);
     */
 
     error = ofproto_flow_mod_init(ofproto, &ofm, fm, NULL);
