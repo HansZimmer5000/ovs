@@ -4,7 +4,32 @@ AT_BANNER([ASP library])
 # If OVS_VSWITCHD_STOP is not brought to work, use following and manually shutdown application
 #   OVS_APP_EXIT_AND_WAIT([ovs-vswitchd])
 #   OVS_APP_EXIT_AND_WAIT([ovsdb-server])
-# For more information about the bytes we are sending, have a look 
+# For more information about the bytes we are sending, have a look:
+#   BUNDLE_CONTROL:
+        # (duplicate notes to tickets.md!): 
+        # Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), bundle id (0x89abcdef):
+        # Byte 1:   OF Version (v4=0x05)
+        # Byte 2:   Message Type (e.g. OFPT_BUNDLE_CONTROL=0x21 / OFPT_GET_ASYNC_REQUEST=0x1a, flow-mod=0x22)
+        # Byte 3-4: message length in bytes
+        # Byte 5-8: xid
+        # Byte 9-12:bundleid 
+        # Byte 13:  Cookie
+        # Byte 14:  Control_type(open=00, close=02, commit=04)
+        # Byte 15-16:TODO (flags? "ordered"=00 03, "0x130"=01 31)
+#   BUNDLE_ADD with FLOW_MOD_STRICT:
+        # FlowMod (duplicate notes to tickets.md!): 
+        # Byte 2:   Msg Type (bundle_add 0x22)
+        # Byte 18:  Msg Type (flow_mod=0e)
+        # Byte 21-24:xid (again)
+        # Byte 25-32:cookie
+        # Byte 33-40: ?? No Impact. TODO
+        # Byte 41:  table_id (todo error when ff)
+        # Byte 42:  command (ADD=0, MOD=1, MOD_STRICT=2)
+        # Byte 43-44: Idle Timeout
+        # Byte 45-46: Hard Timeout
+        # Byte 66:  ??
+        # Byte 76:  in_port
+        # Byte 146: arp_tpa last byte
 
 
 
@@ -89,78 +114,56 @@ OVS_VSWITCHD_START
 # - Send a bundle that is not successfull (returns with reject)
 # - send Rollback and make sure the switch answers with Finish. 
 
+# Start a monitor, use the required protocol version
+ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
+AT_CAPTURE_FILE([monitor.log])
 
-# Setup Test Execution and make sure there is no error
-AT_CHECK([ovs-appctl vlog/set vconn:dbg])
-AT_CHECK([ovs-ofctl --no-names del-flows br0])
+ovs-appctl time/stop
+# More info in: ovsdb-server.log
+# Raw Messages in ofproto.at:5343,5408
 
-# Add test flow and modify that I gess should modify something in existence, but as nothing is there yet, it basically does nothing at all and only exists to be a signal as this bundle is a ASP conform bundle.
-AT_DATA([flows.txt], [dnl
-delete_strict table=255
-])
-
-# Insert test flow without error
-AT_CHECK([ovs-ofctl --no-names --bundle add-flows br0 flows.txt])
-
-# Check that test flow was inserted
-AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
-NXST_FLOW reply:
-])
-
-# 'dnl' seems to act as a comment signal in that DSL.
-dnl Check logs for OpenFlow trace
-
-# Prevent race by waiting for greater or equals one (-ge 1) "NXST_FLOW reply" messages.
-OVS_WAIT_UNTIL([vconn_sub < ovs-vswitchd.log | test `grep -- "|vconn|DBG|unix: sent (Success): NXST_FLOW reply" | wc -l` -ge 1])
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 04 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 # Check if anyting was alright.
 AT_CHECK([print_vconn_debug | vconn_sub | ofctl_strip], [0], [dnl
 vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
  version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-vconn|DBG|unix: received: OFPT_HELLO:
- version bitmap: 0x01
-vconn|DBG|unix: negotiated OpenFlow version 0x01 (we support version 0x07 and earlier, peer supports version 0x01)
-vconn|DBG|unix: received: OFPT_FLOW_MOD: DEL actions=drop
-vconn|DBG|unix: received: OFPT_BARRIER_REQUEST:
-vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY:
-vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
- version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
 vconn|DBG|unix: received: OFPT_HELLO (OF1.4):
  version bitmap: 0x05
 vconn|DBG|unix: negotiated OpenFlow version 0x05 (we support version 0x07 and earlier, peer supports version 0x05)
-vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=OPEN_REQUEST flags=atomic ordered
-vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=OPEN_REPLY flags=0
-vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
- bundle_id=0 flags=atomic ordered
-OFPT_FLOW_MOD (OF1.4): DEL_STRICT table:255 actions=drop
+vconn|DBG|unix: received: NXT_SET_PACKET_IN_FORMAT (OF1.4): format=nxt_packet_in2
 vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
-vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=COMMIT_REQUEST flags=atomic ordered
-vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=COMMIT_REPLY flags=0
-vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
- version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-vconn|DBG|unix: received: OFPT_HELLO:
- version bitmap: 0x01
-vconn|DBG|unix: negotiated OpenFlow version 0x01 (we support version 0x07 and earlier, peer supports version 0x01)
-vconn|DBG|unix: received: NXT_SET_FLOW_FORMAT: format=nxm
-vconn|DBG|unix: received: OFPT_BARRIER_REQUEST:
-vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY:
-vconn|DBG|unix: received: NXST_FLOW request:
-vconn|DBG|unix: sent (Success): NXST_FLOW reply:
+vconn|DBG|unix: received: OFPT_FLOW_MOD (OF1.4): DEL_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: sent (Success): OFPT_ERROR (OF1.4): OFPFMFC_UNKNOWN
+OFPT_FLOW_MOD (OF1.4):
+(***truncated to 64 bytes from 144***)
+00000000  05 0e 00 90 01 02 03 04-00 00 00 00 00 00 00 00 |................|
+00000010  00 00 00 00 00 00 00 00-ff 04 00 00 00 00 ff ff |................|
+00000020  ff ff ff ff ff ff ff ff-ff ff ff ff 00 00 00 00 |................|
+00000030  00 01 00 42 80 00 00 04-00 00 00 01 80 00 08 06 |...B............|
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
-br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
-br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
 ])
 
+
 OVS_VSWITCHD_STOP(["
-/My: Bundle Add FlowMod Command: 4 with tableid: 255/d
-/My: current_xid: 33554432/d
+/My: Rollback: Reseting current_xid to 0/d
 "])
 AT_CLEANUP
 
@@ -185,78 +188,56 @@ OVS_VSWITCHD_START
 # - Send a bundle that is successfull (returns with confirm)
 # - Send Commit and make sure the switch answers with Finish. 
 
-# Setup Test Execution and make sure there is no error
-AT_CHECK([ovs-appctl vlog/set vconn:dbg])
-AT_CHECK([ovs-ofctl --no-names del-flows br0])
+# Start a monitor, use the required protocol version
+ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
+AT_CAPTURE_FILE([monitor.log])
 
-# Add test flow and modify that I gess should modify something in existence, but as nothing is there yet, it basically does nothing at all and only exists to be a signal as this bundle is a ASP conform bundle.
-AT_DATA([flows.txt], [dnl
-delete table=255
-])
+ovs-appctl time/stop
+# More info in: ovsdb-server.log
+# Raw Messages in ofproto.at:5343,5408
 
-# Insert test flow without error
-AT_CHECK([ovs-ofctl --no-names --bundle add-flows br0 flows.txt])
-
-# Check that test flow was inserted
-AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
-NXST_FLOW reply:
-])
-
-# 'dnl' seems to act as a comment signal in that DSL.
-dnl Check logs for OpenFlow trace
-
-# Prevent race by waiting for greater or equals one (-ge 1) "NXST_FLOW reply" messages.
-OVS_WAIT_UNTIL([vconn_sub < ovs-vswitchd.log | test `grep -- "|vconn|DBG|unix: sent (Success): NXST_FLOW reply" | wc -l` -ge 1])
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 03 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 # Check if anyting was alright.
 AT_CHECK([print_vconn_debug | vconn_sub | ofctl_strip], [0], [dnl
 vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
  version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-vconn|DBG|unix: received: OFPT_HELLO:
- version bitmap: 0x01
-vconn|DBG|unix: negotiated OpenFlow version 0x01 (we support version 0x07 and earlier, peer supports version 0x01)
-vconn|DBG|unix: received: OFPT_FLOW_MOD: DEL actions=drop
-vconn|DBG|unix: received: OFPT_BARRIER_REQUEST:
-vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY:
-vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
- version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
 vconn|DBG|unix: received: OFPT_HELLO (OF1.4):
  version bitmap: 0x05
 vconn|DBG|unix: negotiated OpenFlow version 0x05 (we support version 0x07 and earlier, peer supports version 0x05)
-vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=OPEN_REQUEST flags=atomic ordered
-vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=OPEN_REPLY flags=0
-vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
- bundle_id=0 flags=atomic ordered
-OFPT_FLOW_MOD (OF1.4): DEL table:255 actions=drop
+vconn|DBG|unix: received: NXT_SET_PACKET_IN_FORMAT (OF1.4): format=nxt_packet_in2
 vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
-vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=COMMIT_REQUEST flags=atomic ordered
-vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
- bundle_id=0 type=COMMIT_REPLY flags=0
-vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
- version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-vconn|DBG|unix: received: OFPT_HELLO:
- version bitmap: 0x01
-vconn|DBG|unix: negotiated OpenFlow version 0x01 (we support version 0x07 and earlier, peer supports version 0x01)
-vconn|DBG|unix: received: NXT_SET_FLOW_FORMAT: format=nxm
-vconn|DBG|unix: received: OFPT_BARRIER_REQUEST:
-vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY:
-vconn|DBG|unix: received: NXST_FLOW request:
-vconn|DBG|unix: sent (Success): NXST_FLOW reply:
+vconn|DBG|unix: received: OFPT_FLOW_MOD (OF1.4): DEL table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: sent (Success): OFPT_ERROR (OF1.4): OFPFMFC_UNKNOWN
+OFPT_FLOW_MOD (OF1.4):
+(***truncated to 64 bytes from 144***)
+00000000  05 0e 00 90 01 02 03 04-00 00 00 00 00 00 00 00 |................|
+00000010  00 00 00 00 00 00 00 00-ff 03 00 00 00 00 ff ff |................|
+00000020  ff ff ff ff ff ff ff ff-ff ff ff ff 00 00 00 00 |................|
+00000030  00 01 00 42 80 00 00 04-00 00 00 01 80 00 08 06 |...B............|
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
-br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
-br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
 ])
 
 
 OVS_VSWITCHD_STOP(["
-/My: Bundle Add FlowMod Command: 3 with tableid: 255/d
-/My: current_xid: 33554432/d
+/My: Commit: Reseting current_xid to 0/d
 "])
 AT_CLEANUP
 
