@@ -7969,9 +7969,14 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
         VLOG_WARN("My: Bundle Add FlowMod Command: %d with tableid: %d and xid: %d\n", fm.command, fm.table_id, oh->xid);
         int got_lock = pthread_mutex_trylock(&xid_read_mutex);  
-        if (got_lock == 0 && oh->xid != 0) {
+        if (got_lock == 0 && oh->xid != 0 && current_xid == 0) {
             current_xid = oh->xid;
+        } else {
+            /* return ofperr error */
+            VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_xid, got_lock);
+            return OFPERR_OFPBFC_MSG_FAILED;
         }
+        pthread_mutex_unlock(&xid_read_mutex);
         VLOG_WARN("My: current_xid: %d\n", current_xid);
 
 

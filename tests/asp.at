@@ -102,109 +102,6 @@ AT_CLEANUP
 
 
 
-
-AT_SETUP([ASP - Force Reject LockSet (OpenFlow 1.4)])
-AT_KEYWORDS([monitor])
-OVS_VSWITCHD_START
-
-# TODO 
-# - How to check if the switch really rejected due a set lock?
-# - Send a bundle before this one which will acquire and set the lock.
-# - Send another bundle which then will reject the update since the lock is set.
-
-# Start a monitor, use the required protocol version
-ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
-AT_CAPTURE_FILE([monitor.log])
-
-ovs-appctl time/stop
-# More info in: ovsdb-server.log
-# Raw Messages in ofproto.at:5343,5408
-
-# Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), bundle id (0x89abcdef):
-# Byte 1:   OF Version (v4=0x05)
-# Byte 2:   Message Type (e.g. OFPT_BUNDLE_CONTROL=0x21 / OFPT_GET_ASYNC_REQUEST=0x1a, flow-mod=0x22)
-# Byte 3-4: message length in bytes
-# Byte 5-8: xid
-# Byte 9-12:bundleid 
-# Byte 13:  Cookie
-# Byte 14:  Control_type(open=00, close=02, commit=04)
-# Byte 15-16:TODO (flags? "ordered"=00 03, "0x130"=01 31)
-ovs-appctl -t ovs-ofctl ofctl/send "\
-05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
-# FlowMod: 
-# Byte 2:   Msg Type (bundle_add 0x22)
-# Byte 18:  Msg Type (flow_mod=0e)
-# Byte 21-24:xid (again)
-# Byte 25-32:cookie
-# Byte 33-40: ?? No Impact. TODO
-# Byte 41:  table_id (todo error when ff)
-# Byte 42:  command (ADD=0, MOD=1, MOD_STRICT=2)
-# Byte 43-44: Idle Timeout
-# Byte 45-46: Hard Timeout
-# Byte 66:  ??
-# Byte 76:  in_port
-# Byte 146: arp_tpa last byte
-ovs-appctl -t ovs-ofctl ofctl/send "\
-05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
-05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
-00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
-ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
-00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
-50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
-80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
-00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
-00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
-00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
-"
-# Commit: 
-ovs-appctl -t ovs-ofctl ofctl/send "\
-05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
-
-ovs-appctl -t ovs-ofctl ofctl/barrier
-OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
-
-AT_CHECK([cat monitor.log], [], [dnl
-send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef type=OPEN_REQUEST flags=atomic ordered
-OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef type=OPEN_REPLY flags=0
-send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef flags=atomic ordered
-OFPT_FLOW_MOD (OF1.4) (xid=0x1020304): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
-send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef type=CLOSE_REQUEST flags=atomic ordered
-OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef type=CLOSE_REPLY flags=0
-send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
-OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
- bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
-OFPT_BARRIER_REPLY (OF1.4) (xid=0x4):
-])
-
-OVS_VSWITCHD_STOP(["
-/My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
-/My: current_xid: 67305985/d
-"])
-AT_CLEANUP
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 AT_SETUP([ASP - Force Reject ConflictRules (OpenFlow 1.4)])
 AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
@@ -482,4 +379,157 @@ br0<->unix: 1 flow_mods in the last 0 s (1 deletes)
 
 
 OVS_VSWITCHD_STOP(["/My: Bundle Add FlowMod Command: 3 with tableid: 255/d"])
+AT_CLEANUP
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AT_SETUP([ASP - Force Reject LockSet (OpenFlow 1.4)])
+AT_KEYWORDS([monitor])
+OVS_VSWITCHD_START
+
+# TODO 
+# - How to check if the switch really rejected due a set lock?
+# - Send a bundle before this one which will acquire and set the lock.
+# - Send another bundle which then will reject the update since the lock is set.
+
+# Start a monitor, use the required protocol version
+ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
+AT_CAPTURE_FILE([monitor.log])
+
+ovs-appctl time/stop
+# More info in: ovsdb-server.log
+# Raw Messages in ofproto.at:5343,5408
+
+# Open OF v1.4(0x05), OFPT_BUNDLE_CONTROL (0x21), length (0x10), bundle id (0x89abcdef):
+# Byte 1:   OF Version (v4=0x05)
+# Byte 2:   Message Type (e.g. OFPT_BUNDLE_CONTROL=0x21 / OFPT_GET_ASYNC_REQUEST=0x1a, flow-mod=0x22)
+# Byte 3-4: message length in bytes
+# Byte 5-8: xid
+# Byte 9-12:bundleid 
+# Byte 13:  Cookie
+# Byte 14:  Control_type(open=00, close=02, commit=04)
+# Byte 15-16:TODO (flags? "ordered"=00 03, "0x130"=01 31)
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
+# FlowMod: 
+# Byte 2:   Msg Type (bundle_add 0x22)
+# Byte 18:  Msg Type (flow_mod=0e)
+# Byte 21-24:xid (again)
+# Byte 25-32:cookie
+# Byte 33-40: ?? No Impact. TODO
+# Byte 41:  table_id (todo error when ff)
+# Byte 42:  command (ADD=0, MOD=1, MOD_STRICT=2)
+# Byte 43-44: Idle Timeout
+# Byte 45-46: Hard Timeout
+# Byte 66:  ??
+# Byte 76:  in_port
+# Byte 146: arp_tpa last byte
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+# Commit: 
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+# Send another to force reject.
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 00 00 00 0a 00 00 00 0b 00 00 00 03"
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 00 00 00 0a 00 00 00 0b 00 00 00 03 \
+05 0e 00 90 00 00 00 0a 00 00 00 0b 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 00 00 00 0a 00 00 00 0b 00 04 00 03"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+
+AT_CHECK([cat monitor.log], [], [dnl
+send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
+ bundle_id=0x89abcdef type=OPEN_REQUEST flags=atomic ordered
+OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
+ bundle_id=0x89abcdef type=OPEN_REPLY flags=0
+send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0x1020304):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020304): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
+ bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
+OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
+ bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
+OFPT_BARRIER_REPLY (OF1.4) (xid=0x4):
+send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0xa):
+ bundle_id=0xb type=OPEN_REQUEST flags=atomic ordered
+OFPT_BUNDLE_CONTROL (OF1.4) (xid=0xa):
+ bundle_id=0xb type=OPEN_REPLY flags=0
+send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0xa):
+ bundle_id=0xb flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4) (xid=0xa): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+OFPT_ERROR (OF1.4) (xid=0xa): OFPBFC_MSG_FAILED
+OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0xa):
+(***truncated to 64 bytes from 160***)
+00000000  05 22 00 a0 00 00 00 0a-00 00 00 0b 00 00 00 03 |."..............|
+00000010  05 0e 00 90 00 00 00 0a-00 00 00 0b 00 00 00 00 |................|
+00000020  00 00 00 00 00 00 00 00-ff 02 00 00 00 00 ff ff |................|
+00000030  ff ff ff ff ff ff ff ff-ff ff ff ff 00 00 00 00 |................|
+send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0xa):
+ bundle_id=0xb type=COMMIT_REQUEST flags=atomic ordered
+OFPT_BUNDLE_CONTROL (OF1.4) (xid=0xa):
+ bundle_id=0xb type=COMMIT_REPLY flags=0
+OFPT_BARRIER_REPLY (OF1.4) (xid=0x5):
+])
+
+OVS_VSWITCHD_STOP(["
+/My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
+/My: current_xid: 67305985/d
+/My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 167772160/d
+/My: Lock was already set: xid=67305985 trylock=0/d
+"])
 AT_CLEANUP
