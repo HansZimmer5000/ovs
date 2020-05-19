@@ -84,7 +84,8 @@ AT_SETUP([ASP - Rollback (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
 # TODO
-# - How to check whether lock is freed and staging area removed after rollback?
+# - How to check whether lock is freed?
+# - How to check whether staging area is removed after rollback?
 # - Send a bundle that is not successfull (returns with reject)
 # - send Rollback and make sure the switch answers with Finish. 
 
@@ -179,7 +180,8 @@ AT_SETUP([ASP - Commit (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
 # TODO
-# - How to check whether lock is freed and staging area is activated after commit?
+# - How to check whether lock is freed?
+# - How to check whether staging area is activated after commit?
 # - Send a bundle that is successfull (returns with confirm)
 # - Send Commit and make sure the switch answers with Finish. 
 
