@@ -6212,24 +6212,32 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     */
 
     /* Identify ASP Message COMMIT & ROLLBACK */
-    // TODO also check if Xid is equal!!
-    if (fm->command == OFPFC_DELETE && fm->table_id == 255)
+    if ((fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255)
     {
-        // ASP COMMIT
-        // TODO Activate Staging Area
-        current_xid = 0;
-        VLOG_WARN("My: Commit: Reseting current_xid to 0\n");
+        if (fm->command == OFPFC_DELETE && req->request->xid == current_xid)
+        {
+            // ASP COMMIT
+            // TODO Activate Staging Area
+            current_xid = 0;
+            VLOG_WARN("My: Commit: Reseting current_xid to 0\n");
 
-        return OFPERR_OFPFMFC_UNKNOWN;
-    }
-    else if (fm->command == OFPFC_DELETE_STRICT && fm->table_id == 255)
-    {
-        // ASP ROLLBACK
-        // TODO Remove Staging Area
-        current_xid = 0;
-        VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
+            return OFPERR_OFPFMFC_UNKNOWN;
+        }
+        else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == current_xid)
+        {
+            // ASP ROLLBACK
+            // TODO Remove Staging Area
+            current_xid = 0;
+            VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
 
-        return OFPERR_OFPFMFC_UNKNOWN;
+            return OFPERR_OFPFMFC_UNKNOWN;
+        }
+        else
+        {
+            VLOG_WARN("My: Rollback or Commit received but xid(%d) was not current_xid(%d)\n", req->request->xid, current_xid);
+            /*TODO Return of this error code is not part of ASP! Isthis OK? */
+            return OFPERR_OFPBFC_MSG_BAD_XID;
+        }
     }
     else
     {

@@ -122,6 +122,29 @@ ovs-appctl time/stop
 # More info in: ovsdb-server.log
 # Raw Messages in ofproto.at:5343,5408
 
+
+# BUNDLE_CONTROL OPEN
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
+# BUNDLE_ADD FLOW_MOD_STRICT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+# BUNDLE_CONTROL COMMIT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+# Send Rollback: FLOW_MOD with DELETE_STRICT
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
 00 00 00 00 00 00 00 00 ff 04 00 00 00 00 ff ff \
@@ -146,6 +169,19 @@ vconn|DBG|unix: negotiated OpenFlow version 0x05 (we support version 0x07 and ea
 vconn|DBG|unix: received: NXT_SET_PACKET_IN_FORMAT (OF1.4): format=nxt_packet_in2
 vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=OPEN_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=OPEN_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 vconn|DBG|unix: received: OFPT_FLOW_MOD (OF1.4): DEL_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
 vconn|DBG|unix: sent (Success): OFPT_ERROR (OF1.4): OFPFMFC_UNKNOWN
 OFPT_FLOW_MOD (OF1.4):
@@ -159,13 +195,130 @@ vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
+br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
 ])
 
-
 OVS_VSWITCHD_STOP(["
+/My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
+/My: current_xid: 67305985/d
 /My: Rollback: Reseting current_xid to 0/d
 "])
 AT_CLEANUP
+
+
+
+
+
+
+
+
+
+
+
+
+
+AT_SETUP([ASP - Rollback - wrong xid (OpenFlow 1.4)])
+OVS_VSWITCHD_START
+
+# TODO
+# - How to check whether lock is freed?
+# - How to check whether staging area is removed after rollback?
+# - Send a bundle that is not successfull (returns with reject)
+# - send Rollback and make sure the switch answers with Finish. 
+
+# Start a monitor, use the required protocol version
+ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
+AT_CAPTURE_FILE([monitor.log])
+
+ovs-appctl time/stop
+# More info in: ovsdb-server.log
+# Raw Messages in ofproto.at:5343,5408
+
+
+# BUNDLE_CONTROL OPEN
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
+# BUNDLE_ADD FLOW_MOD_STRICT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+# BUNDLE_CONTROL COMMIT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+# Send Rollback: FLOW_MOD with DELETE_STRICT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 0e 00 90 01 02 03 31 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 04 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+
+# Check if anyting was alright.
+AT_CHECK([print_vconn_debug | vconn_sub | ofctl_strip], [0], [dnl
+vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
+ version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
+vconn|DBG|unix: received: OFPT_HELLO (OF1.4):
+ version bitmap: 0x05
+vconn|DBG|unix: negotiated OpenFlow version 0x05 (we support version 0x07 and earlier, peer supports version 0x05)
+vconn|DBG|unix: received: NXT_SET_PACKET_IN_FORMAT (OF1.4): format=nxt_packet_in2
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=OPEN_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=OPEN_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
+vconn|DBG|unix: received: OFPT_FLOW_MOD (OF1.4): DEL_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: sent (Success): OFPT_ERROR (OF1.4): OFPBFC_MSG_BAD_XID
+OFPT_FLOW_MOD (OF1.4):
+(***truncated to 64 bytes from 144***)
+00000000  05 0e 00 90 01 02 03 31-00 00 00 00 00 00 00 00 |.......1........|
+00000010  00 00 00 00 00 00 00 00-ff 04 00 00 00 00 ff ff |................|
+00000020  ff ff ff ff ff ff ff ff-ff ff ff ff 00 00 00 00 |................|
+00000030  00 01 00 42 80 00 00 04-00 00 00 01 80 00 08 06 |...B............|
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
+])
+
+AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
+br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
+])
+
+OVS_VSWITCHD_STOP(["
+/My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
+/My: current_xid: 67305985/d
+/My: Rollback: Reseting current_xid to 0/d
+/My: Rollback or Commit received but xid(822280705) was not current_xid(67305985)/d
+"])
+AT_CLEANUP
+
+
 
 
 
@@ -196,6 +349,28 @@ ovs-appctl time/stop
 # More info in: ovsdb-server.log
 # Raw Messages in ofproto.at:5343,5408
 
+# BUNDLE_CONTROL OPEN
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
+# BUNDLE_ADD FLOW_MOD_STRICT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+# BUNDLE_CONTROL COMMIT
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+# Send Commit: FLOW_MOD with DELETE
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
 00 00 00 00 00 00 00 00 ff 03 00 00 00 00 ff ff \
@@ -220,6 +395,19 @@ vconn|DBG|unix: negotiated OpenFlow version 0x05 (we support version 0x07 and ea
 vconn|DBG|unix: received: NXT_SET_PACKET_IN_FORMAT (OF1.4): format=nxt_packet_in2
 vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=OPEN_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=OPEN_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
+vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
+ bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
+vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
+vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 vconn|DBG|unix: received: OFPT_FLOW_MOD (OF1.4): DEL table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
 vconn|DBG|unix: sent (Success): OFPT_ERROR (OF1.4): OFPFMFC_UNKNOWN
 OFPT_FLOW_MOD (OF1.4):
@@ -233,10 +421,12 @@ vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
+br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
 ])
 
-
 OVS_VSWITCHD_STOP(["
+/My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
+/My: current_xid: 67305985/d
 /My: Commit: Reseting current_xid to 0/d
 "])
 AT_CLEANUP
