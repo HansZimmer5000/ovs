@@ -6181,18 +6181,18 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
 
     /* TODO
     * Recognize VoteLock - OFPT_FLOW_MOD + OFPFC_MODIFY_STRICT TableId=255
-        * Check Lock
-        * Acquire Lock and set to xid
-        * Create Staging Area
-        * Answer with Confirm or Reject
+        * Check Lock - Done
+        * Acquire Lock and set to xid - Done
+        * Create Staging Area - TODO
+        * Answer with Confirm or Reject - TODO
     * Recognize Rollback - OFPT_FLOW_MOD + OFPFC_DELETE_STRICT TableId=255
-        * Remove Staging Area
-        * Free Lock
-        * Answer with Finish
+        * Remove Staging Area - TODO
+        * Free Lock - Done
+        * Answer with Finish - Done
     * Recognize Commit   - OFPT_FLOW_MOD + OFPFC_DELETE TableId=255
-        * Activate Staging Area
-        * Free Lock 
-        * Answer with Finish
+        * Activate Staging Area - TODO
+        * Free Lock  - Done
+        * Answer with Finish - Done
     * Is this alreay enough? Do I really need a recognition of within the bundles?
     * Do I need the bundle ID for anything?
     */
@@ -6209,6 +6209,18 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     * Logging
         * My Log entries are prepended with "My: "  
         * VLOG_ERR("My: some text and %s", datapath_name);
+    * Staging Area:
+        * ovs_mutex_lock(&ofproto_mutex);
+        * ofm.version = ofproto->tables_version + 1;
+        * Create ::= error = ofproto_flow_mod_start(ofproto, &ofm);
+        * if (error){
+        * Remove ::= ofproto_flow_mod_revert
+        * }else{
+        *   Set ::= ofproto_bump_tables_version(ofproto);
+        *   Set ::= ofproto_flow_mod_finish(ofproto, &ofm, req);
+        *   ofmonitor_flush(ofproto->connmgr);
+        * }
+        * ovs_mutex_unlock(&ofproto_mutex);   
     */
 
     /* Identify ASP Message COMMIT & ROLLBACK */
@@ -8652,6 +8664,8 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     if (error)
     {
         ofp_bundle_entry_free(bmsg);
+
+        //TODO if error, also check if xid == current_xid. If so, empty current_xid (=0).
     }
 
     return error;
