@@ -167,6 +167,7 @@ ofp_bundle_add_message(struct ofconn *ofconn, uint32_t id, uint16_t flags,
     }
 
     bundle->used = time_msec();
+    //my: Here somehow flow_mod gets activated. 
     ovs_list_push_back(&bundle->msg_list, &bmsg->node);
     return 0;
 }
