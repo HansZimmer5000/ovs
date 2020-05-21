@@ -5225,6 +5225,7 @@ ofproto_rule_create(struct ofproto *ofproto, struct cls_rule *cr,
     ovs_mutex_unlock(&rule->mutex);
 
     /* Construct rule, initializing derived state. */
+    //my: Actually creating (not activating!) of the "staging Area"? Dont think so but may this is the overlap / old<->new rules matching error: OFPERR_OFPFMFC_OVERLAP
     error = ofproto->ofproto_class->rule_construct(rule);
     if (error)
     {
@@ -6184,7 +6185,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         * Check Lock - Done
         * Acquire Lock and set to xid - Done
         * Create Staging Area - TODO
-        * Answer with Confirm or Reject - TODO
+        * Answer with Confirm or Reject - TODO: Reject if rules conflict and unlock (current_xid = 0).
     * Recognize Rollback - OFPT_FLOW_MOD + OFPFC_DELETE_STRICT TableId=255
         * Remove Staging Area - TODO
         * Free Lock - Done
@@ -8625,6 +8626,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
         if (!error)
         {
+            //VLOG_WARN("My: init bundle_flow_mod\n");
             error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
         }
     }
@@ -8657,8 +8659,8 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
     if (!error)
     {
-        error = ofp_bundle_add_message(ofconn, badd.bundle_id, badd.flags,
-                                       bmsg, oh);
+        //VLOG_WARN("My: activating bundle_flow_mod\n");
+        error = ofp_bundle_add_message(ofconn, badd.bundle_id, badd.flags, bmsg, oh);
     }
 
     if (error)
