@@ -302,6 +302,8 @@ struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
 /* Global lock that protects the ASP operations*/
 pthread_mutex_t xid_read_mutex = PTHREAD_MUTEX_INITIALIZER;
 int current_xid = 0;
+uint32_t current_bid = 0;
+struct ofproto_flow_mod *current_ofm;
 
 unsigned ofproto_flow_limit = OFPROTO_FLOW_LIMIT_DEFAULT;
 unsigned ofproto_max_idle = OFPROTO_MAX_IDLE_DEFAULT;
@@ -6231,7 +6233,21 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         {
             // ASP COMMIT
             // TODO Activate Staging Area
+            VLOG_WARN("My: Activate Staging Area\n");
+
+            ovs_version_t version = current_ofm->version;
+
+            if (ofproto->tables_version < version)
+            {
+                //My: Activation of staging area?
+                ofproto->tables_version = version;
+                ofproto->ofproto_class->set_tables_version(
+                    ofproto, ofproto->tables_version);
+            }
+
+            ofproto_flow_mod_finish(ofproto, current_ofm, req);
             current_xid = 0;
+            current_bid = 0;
             VLOG_WARN("My: Commit: Reseting current_xid to 0\n");
 
             return OFPERR_OFPFMFC_UNKNOWN;
@@ -6240,7 +6256,9 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         {
             // ASP ROLLBACK
             // TODO Remove Staging Area
+            ofproto_flow_mod_revert(ofproto, current_ofm);
             current_xid = 0;
+            current_bid = 0;
             VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
 
             return OFPERR_OFPFMFC_UNKNOWN;
@@ -8391,9 +8409,19 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                 {
                     /* Store the version in which the changes should take
                      * effect. */
-                    be->ofm.version = version;
-                    error = ofproto_flow_mod_start(ofproto, &be->ofm);
+                    // My: Here Staging Area init + rule conflict check?
+                    if (bundle->id == current_bid)
+                    {
+                        current_ofm->version = version;
+                        error = ofproto_flow_mod_start(ofproto, current_ofm);
+                    }
+                    else
+                    {
+                        be->ofm.version = version;
+                        error = ofproto_flow_mod_start(ofproto, &be->ofm);
+                    }
                 }
+
                 else if (be->type == OFPTYPE_GROUP_MOD)
                 {
                     /* Store the version in which the changes should take
@@ -8411,6 +8439,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                     OVS_NOT_REACHED();
                 }
             }
+
             if (error)
             {
                 break;
@@ -8431,7 +8460,14 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
             {
                 if (be->type == OFPTYPE_FLOW_MOD)
                 {
-                    ofproto_flow_mod_revert(ofproto, &be->ofm);
+                    if (bundle->id == current_bid)
+                    {
+                        ofproto_flow_mod_revert(ofproto, current_ofm);
+                    }
+                    else
+                    {
+                        ofproto_flow_mod_revert(ofproto, &be->ofm);
+                    }
                 }
                 else if (be->type == OFPTYPE_GROUP_MOD)
                 {
@@ -8459,7 +8495,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                      * processing. */
                     port_mod_finish(ofconn, &be->opm.pm, be->opm.port);
                 }
-                else
+                else if (!(bundle->id == current_bid))
                 {
                     version =
                         (be->type == OFPTYPE_FLOW_MOD) ? be->ofm.version : (be->type == OFPTYPE_GROUP_MOD) ? be->ogm.version : (be->type == OFPTYPE_PACKET_OUT) ? be->opo.version : version;
@@ -8469,6 +8505,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                      * this version visible to lookups at once. */
                     if (ofproto->tables_version < version)
                     {
+                        //My: Activation of staging area?
                         ofproto->tables_version = version;
                         ofproto->ofproto_class->set_tables_version(
                             ofproto, ofproto->tables_version);
@@ -8586,6 +8623,16 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     struct ofpbuf ofpacts;
     uint64_t ofpacts_stub[1024 / 8];
     ofpbuf_use_stub(&ofpacts, ofpacts_stub, sizeof ofpacts_stub);
+    int is_asp = 0;
+
+    /* Detect if this message is a flow update inside ASP VoteLock */
+    // TODO Does this change anything?->Think so since the Bundle_add of the real update (not the tableid=255 one) does overwrite the existing current_ofm only if is_asp != 0.
+    // TODO Could also check if bundle id == current_bid
+    if (current_xid == oh->xid)
+    {
+        is_asp = 1;
+        VLOG_WARN("Bundle_add is_asp\n");
+    }
 
     if (type == OFPTYPE_PORT_MOD)
     {
@@ -8602,9 +8649,10 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
                                         u16_to_ofp(ofproto->max_ports),
                                         ofproto->n_tables);
 
-        /* Identify ASP Message VOTELOCK */
+        /* Identify ASP VOTELOCK */
         if (fm.command == OFPFC_MODIFY_STRICT && fm.table_id == 255)
         {
+            is_asp = 1;
             VLOG_WARN("My: Bundle Add FlowMod Command: %d with tableid: %d and xid: %d\n", fm.command, fm.table_id, oh->xid);
 
             /* Check if switch is locked or free */
@@ -8613,6 +8661,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
             {
                 /* Lock Switch by setting current_xid != 0 */
                 current_xid = oh->xid;
+                current_xid = badd.bundle_id;
             }
             else
             {
@@ -8626,8 +8675,18 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
         if (!error)
         {
+            //TODO This makes Problems!!! Lets OVS crash!
+
             //VLOG_WARN("My: init bundle_flow_mod\n");
-            error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
+            /*if (is_asp)
+            {
+                VLOG_WARN("init bundle_add flow-mod\n");
+                error = ofproto_flow_mod_init(ofproto, current_ofm, &fm, NULL);
+            }
+            else
+            {*/
+                error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
+            //}
         }
     }
     else if (type == OFPTYPE_GROUP_MOD)
@@ -8657,17 +8716,31 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
     ofpbuf_uninit(&ofpacts);
 
-    if (!error)
+    
+    if (!error && !is_asp)
     {
         //VLOG_WARN("My: activating bundle_flow_mod\n");
         error = ofp_bundle_add_message(ofconn, badd.bundle_id, badd.flags, bmsg, oh);
     }
-
-    if (error)
+    
+    if (error) 
     {
-        ofp_bundle_entry_free(bmsg);
 
-        //TODO if error, also check if xid == current_xid. If so, empty current_xid (=0).
+        if (is_asp)
+        {
+            VLOG_WARN("bundle_add error! Freeing\n");
+            /* ASP VoteLock Fail, free xid again */
+            if (current_xid == oh->xid)
+            {
+                current_xid = 0;
+            }
+
+            /* Set ofm to bmsg so its freed.*/
+            // does not work: &bmsg->ofm = current_ofm;
+            ofproto_flow_mod_uninit(current_ofm);
+        }
+
+        ofp_bundle_entry_free(bmsg);
     }
 
     return error;
