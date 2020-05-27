@@ -5148,13 +5148,12 @@ add_flow_finish(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
                 const struct openflow_mod_requester *req)
     OVS_REQUIRES(ofproto_mutex)
 {
-    struct rule *old_rule = rule_collection_n(&ofm->old_rules)
-                                ? rule_collection_rules(&ofm->old_rules)[0]
-                                : NULL;
+    struct rule *old_rule = rule_collection_n(&ofm->old_rules) ? rule_collection_rules(&ofm->old_rules)[0] : NULL;
     struct rule *new_rule = rule_collection_rules(&ofm->new_rules)[0];
     struct ovs_list dead_cookies = OVS_LIST_INITIALIZER(&dead_cookies);
 
     replace_rule_finish(ofproto, ofm, req, old_rule, new_rule, &dead_cookies);
+    //return ; //TODO ab hier ???
     learned_cookies_flush(ofproto, &dead_cookies);
 
     if (old_rule)
@@ -5579,8 +5578,10 @@ replace_rule_finish(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
      * link the packet and byte counts from the old rule to the new one if
      * 'modify_keep_counts' is 'true'.  The 'replaced_rule' will be deleted
      * right after this call. */
-    ofproto->ofproto_class->rule_insert(new_rule, replaced_rule,
-                                        ofm->modify_keep_counts);
+
+    //return ; //TODO ab hier ???
+    ofproto->ofproto_class->rule_insert(new_rule, replaced_rule, ofm->modify_keep_counts);
+
     learned_cookies_inc(ofproto, rule_get_actions(new_rule));
 
     if (old_rule)
@@ -5783,6 +5784,7 @@ modify_flows_revert(struct ofproto *ofproto, struct ofproto_flow_mod *ofm)
         {
             replace_rule_revert(ofproto, old_rule, new_rule);
         }
+
         rule_collection_destroy(new_rules);
         rule_collection_destroy(old_rules);
     }
@@ -6240,24 +6242,29 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
             }
             else
             {
-                // TODO Activate Staging Area
+                // Activate Staging Area
                 VLOG_WARN("My: Activate Staging Area");
-                // Just for Debugging: Remove in production
-                //VLOG_WARN("current_ofm is not null!");
 
+                ovs_mutex_lock(&ofproto_mutex);
                 ovs_version_t version = current_ofm->version;
                 if (ofproto->tables_version < version)
                 {
-                    //My: Activation of staging area?
                     ofproto->tables_version = version;
                     ofproto->ofproto_class->set_tables_version(
                         ofproto, ofproto->tables_version);
                 }
+                error = ofproto_flow_mod_start(ofproto, current_ofm);
+                if (!error)
+                {
+                    ofproto_bump_tables_version(ofproto);
+                    ofproto_flow_mod_finish(ofproto, current_ofm, req);
+                    ofmonitor_flush(ofproto->connmgr);
+                }
 
-                //ofproto_flow_mod_finish(ofproto, current_ofm, req);
                 current_xid = 0;
                 current_bid = 0;
                 VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
+                ovs_mutex_unlock(&ofproto_mutex);
 
                 return OFPERR_OFPFMFC_UNKNOWN;
             }
@@ -6265,11 +6272,22 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == current_xid)
         {
             // ASP ROLLBACK
-            // TODO Remove Staging Area
-            ofproto_flow_mod_revert(ofproto, current_ofm);
+            VLOG_WARN("My: Rolling back");
+
+            ovs_mutex_lock(&ofproto_mutex);
             current_xid = 0;
             current_bid = 0;
+            if (!current_ofm)
+            {
+                VLOG_WARN("My: Update is null, no need to reset update");
+            }
+            else
+            {
+                ofproto_flow_mod_uninit(current_ofm);
+                free(current_ofm);
+            }
             VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
+            ovs_mutex_unlock(&ofproto_mutex);
 
             return OFPERR_OFPFMFC_UNKNOWN;
         }
@@ -8191,7 +8209,8 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
 {
     enum ofperr error = 0;
 
-    if (!ofm){
+    if (!ofm)
+    {
         VLOG_WARN("My: flow_mod_init ofm is null");
         return 1;
     }
@@ -8213,7 +8232,6 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
 
     bool check_buffer_id = false;
 
-    
     switch (ofm->command)
     {
     case OFPFC_ADD:
@@ -8226,7 +8244,7 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
         break;
     case OFPFC_MODIFY_STRICT:
         check_buffer_id = true;
-        //error = modify_flow_init_strict(ofproto, ofm, fm);
+        error = modify_flow_init_strict(ofproto, ofm, fm);
         break;
     case OFPFC_DELETE:
         error = delete_flows_init_loose(ofproto, ofm, fm);
@@ -8238,7 +8256,7 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
         error = OFPERR_OFPFMFC_BAD_COMMAND;
         break;
     }
-    /*
+
     if (!error && check_buffer_id && fm->buffer_id != UINT32_MAX)
     {
         error = OFPERR_OFPBRC_BUFFER_UNKNOWN;
@@ -8247,8 +8265,8 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
     if (error)
     {
         ofproto_flow_mod_uninit(ofm);
-    }*/
-    
+    }
+
     return error;
 }
 
@@ -8427,17 +8445,8 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                 {
                     /* Store the version in which the changes should take
                      * effect. */
-                    // My: Here Staging Area init + rule conflict check?
-                    if (bundle->id == current_bid)
-                    {
-                        current_ofm->version = version;
-                        error = ofproto_flow_mod_start(ofproto, current_ofm);
-                    }
-                    else
-                    {
-                        be->ofm.version = version;
-                        error = ofproto_flow_mod_start(ofproto, &be->ofm);
-                    }
+                    be->ofm.version = version;
+                    error = ofproto_flow_mod_start(ofproto, &be->ofm);
                 }
 
                 else if (be->type == OFPTYPE_GROUP_MOD)
@@ -8646,10 +8655,11 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     /* Detect if this message is a flow update inside ASP VoteLock */
     // TODO Does this change anything?->Think so since the Bundle_add of the real update (not the tableid=255 one) does overwrite the existing current_ofm only if is_asp != 0.
     // TODO Could also check if bundle id == current_bid
+
     if (current_xid == oh->xid)
     {
         is_asp = 1;
-        VLOG_WARN("Bundle_add is_asp\n");
+        VLOG_WARN("My: Bundle_add is_asp");
     }
 
     if (type == OFPTYPE_PORT_MOD)
@@ -8683,7 +8693,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
             }
             else
             {
-                /* return ofperr error */
+                /* return ofperr error since could not read xid due to locked*/
                 VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_xid, got_lock);
                 return OFPERR_OFPBFC_MSG_FAILED;
             }
@@ -8693,19 +8703,22 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
         if (!error)
         {
-            //TODO This makes Problems!!! Lets OVS crash!
-
-            VLOG_WARN("My: init bundle_flow_mod\n");
             if (is_asp)
             {
-                VLOG_WARN("init bundle_add flow-mod\n");
-                current_ofm = malloc(sizeof(struct ofproto_flow_mod));
-                error = ofproto_flow_mod_init(ofproto, current_ofm, &fm, NULL);
-                if (error == 1){
-                    // ofm was null
-                    error = 0;
+                if (fm.command == OFPFC_MODIFY_STRICT && fm.table_id == 255)
+                {
+                    /**/
                 }
-                //error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
+                else
+                {
+                    /* ASP: Additional check, just in case the xid was already locked which is not an error saved in "error" var. */
+                    if (oh->xid == current_xid)
+                    {
+                        VLOG_WARN("My: init bundle_add flow-mod\n");
+                        current_ofm = malloc(sizeof(struct ofproto_flow_mod));
+                        error = ofproto_flow_mod_init(ofproto, current_ofm, &fm, NULL);
+                    }
+                }
             }
             else
             {
@@ -8742,7 +8755,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
     if (!error && !is_asp)
     {
-        //VLOG_WARN("My: activating bundle_flow_mod\n");
+        VLOG_WARN("My: add normal (not ASP) bundle message");
         error = ofp_bundle_add_message(ofconn, badd.bundle_id, badd.flags, bmsg, oh);
     }
 
@@ -8759,7 +8772,8 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
             }
 
             /* Set ofm to bmsg so its freed.*/
-            // does not work: &bmsg->ofm = current_ofm;
+            // does not work:
+            //&bmsg->ofm = current_ofm;
             ofproto_flow_mod_uninit(current_ofm);
         }
 

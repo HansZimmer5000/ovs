@@ -88,6 +88,7 @@ OFPT_BARRIER_REPLY (OF1.4) (xid=0x4):
 OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
+/My: init bundle_add flow-mod/d
 "])
 AT_CLEANUP
 
@@ -112,7 +113,7 @@ OVS_VSWITCHD_START
 # - How to check whether lock is freed? -> End logs
 # - How to check whether staging area is removed after rollback? -> TODO
 # - Send a bundle that is not successfull (returns with reject) -> done
-# - send Rollback and make sure the switch answers with Finish. -> error + unkown
+# - send Rollback and make sure the switch answers with Finish. -> error  unkown
 
 # Start a monitor, use the required protocol version
 ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
@@ -139,6 +140,19 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
+# BUNDLE_ADD FLOW_MOD_ADD
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 31 00 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
 # BUNDLE_CONTROL COMMIT
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
@@ -157,6 +171,7 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
 ovs-appctl -t ovs-ofctl ofctl/barrier
+
 OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 # Check if anyting was alright.
@@ -176,6 +191,9 @@ vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
 vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
  bundle_id=0x89abcdef flags=atomic ordered
 OFPT_FLOW_MOD (OF1.4): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): ADD table:49 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
 vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
  bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
 vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
@@ -194,15 +212,17 @@ vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
-AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
-br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
-])
+AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [])
 
 OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
+/My: Bundle_add is_asp/d
+/My: init bundle_add flow-mod/d
+/My: Rolling back/d
 /My: Rollback: Reseting current_xid to 0/d
 "])
+
 AT_CLEANUP
 
 
@@ -216,14 +236,14 @@ AT_CLEANUP
 
 
 
-AT_SETUP([ASP - Rollback / Commit - wrong xid (OpenFlow 1.4)])
+AT_SETUP([ASP - Phase 2 wrong xid (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
 # Test
 # - How to check whether lock is freed? -> End Logs
 # - How to check whether staging area is removed after rollback? -> TODO
 # - Send a bundle that is not successfull (returns with reject) -> done
-# - Send Rollback with wrong xid. -> error + bad_xid
+# - Send Rollback with wrong xid. -> error  bad_xid
 
 # Start a monitor, use the required protocol version
 ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
@@ -306,15 +326,16 @@ vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
-br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
 ])
 
 OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
+/My: init bundle_add flow-mod/d
 /My: Rollback: Reseting current_xid to 0/d
 /My: Rollback or Commit received but xid(822280705) was not current_xid(67305985)/d
 "])
+
 AT_CLEANUP
 
 
@@ -346,7 +367,7 @@ OVS_VSWITCHD_START
 # - How to check whether lock is freed? -> End logs
 # - How to check whether staging area is activated after commit? -> TODO
 # - Send a bundle that is successfull (returns with confirm) -> normal commit reply
-# - Send Commit and make sure the switch answers with Finish. -> error + unkown
+# - Send Commit and make sure the switch answers with Finish. -> error  unkown
 
 # Start a monitor, use the required protocol version
 ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
@@ -359,6 +380,7 @@ ovs-appctl time/stop
 # BUNDLE_CONTROL OPEN
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 00 00 03"
+
 # BUNDLE_ADD FLOW_MOD_STRICT
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
@@ -372,6 +394,21 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
+
+# BUNDLE_ADD FLOW_MOD_ADD
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 31 00 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+
 # BUNDLE_CONTROL COMMIT
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
@@ -391,8 +428,9 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 "
 ovs-appctl -t ovs-ofctl ofctl/barrier
 
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+
 # Check if anyting was alright.
-# OFPBFC_BAD_ID
 AT_CHECK([print_vconn_debug | vconn_sub | ofctl_strip], [0], [dnl
 vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
  version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
@@ -409,6 +447,9 @@ vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
 vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
  bundle_id=0x89abcdef flags=atomic ordered
 OFPT_FLOW_MOD (OF1.4): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+vconn|DBG|unix: received: OFPT_BUNDLE_ADD_MESSAGE (OF1.4):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4): ADD table:49 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
 vconn|DBG|unix: received: OFPT_BUNDLE_CONTROL (OF1.4):
  bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
 vconn|DBG|unix: sent (Success): OFPT_BUNDLE_CONTROL (OF1.4):
@@ -427,18 +468,20 @@ vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
-#br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
+br0<->unix: 1 flow_mods in the last 0 s (1 adds)
 ])
-# TODO insert at error: OFPFMFC_UNKNOWN // OFPBFC_BAD_ID
-OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
-/My: Commit: Reseting current_xid to 0/d
+/My: Bundle_add is_asp/d
+/My: init bundle_add flow-mod/d
+/My: Commit: Reseting current_xid and _bid to 0/d
 /My: Activate Staging Area/d
+/My: Commit: Reseting current_xid and _bid to 0/d
 "])
+
 AT_CLEANUP
 
 
@@ -474,7 +517,7 @@ ovs-appctl -t ovs-ofctl ofctl/send "\
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
 05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
-00 00 00 00 00 00 00 00 01 00 00 00 00 00 ff ff \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
 ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
 50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
@@ -483,10 +526,37 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
+# BUNDLE_ADD FLOW_MOD_ADD
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 04 89 ab cd ef 00 00 00 03 \
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 31 00 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
+
 # Commit: 
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 04 89 ab cd ef 00 04 00 03"
 ovs-appctl -t ovs-ofctl ofctl/barrier
+
+# Send Commit: FLOW_MOD with DELETE
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 0e 00 90 01 02 03 04 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 03 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
 
 # Send another message to conflict the rule.
 ovs-appctl -t ovs-ofctl ofctl/send "\
@@ -494,7 +564,20 @@ ovs-appctl -t ovs-ofctl ofctl/send "\
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 22 00 a0 01 02 03 05 89 ab cd ff 00 00 00 03 \
 05 0e 00 90 01 02 03 05 00 00 00 00 00 00 00 00 \
-00 00 00 00 00 00 00 00 01 00 00 00 00 00 ff ff \
+00 00 00 00 00 00 00 00 ff 02 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 04 00 00 00 00 00 00 00 00 \
+"
+# BUNDLE_ADD FLOW_MOD_ADD
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 22 00 a0 01 02 03 05 89 ab cd ff 00 00 00 03 \
+05 0e 00 90 01 02 03 05 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 31 00 00 00 00 00 ff ff \
 ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
 50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
@@ -506,6 +589,19 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 # Commit: 
 ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 01 02 03 05 89 ab cd ff 00 04 00 03"
+
+# Send Commit: FLOW_MOD with DELETE
+ovs-appctl -t ovs-ofctl ofctl/send "\
+05 0e 00 90 01 02 03 05 00 00 00 00 00 00 00 00 \
+00 00 00 00 00 00 00 00 ff 03 00 00 00 00 ff ff \
+ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
+00 01 00 42 80 00 00 04 00 00 00 01 80 00 08 06 \
+50 54 00 00 00 06 80 00 06 06 50 54 00 00 00 05 \
+80 00 0a 02 08 06 80 00 0c 02 00 00 80 00 2a 02 \
+00 02 80 00 2c 04 c0 a8 00 02 80 00 2e 04 c0 a8 \
+00 01 00 00 00 00 00 00 00 04 00 18 00 00 00 00 \
+00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
+"
 ovs-appctl -t ovs-ofctl ofctl/barrier
 
 OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
@@ -517,23 +613,45 @@ OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
  bundle_id=0x89abcdef type=OPEN_REPLY flags=0
 send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0x1020304):
  bundle_id=0x89abcdef flags=atomic ordered
-OFPT_FLOW_MOD (OF1.4) (xid=0x1020304): ADD table:1 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020304): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0x1020304):
+ bundle_id=0x89abcdef flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020304): ADD table:49 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
 send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
  bundle_id=0x89abcdef type=COMMIT_REQUEST flags=atomic ordered
 OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020304):
  bundle_id=0x89abcdef type=COMMIT_REPLY flags=0
 OFPT_BARRIER_REPLY (OF1.4) (xid=0x4):
+send: OFPT_FLOW_MOD (OF1.4) (xid=0x1020304): DEL table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+OFPT_ERROR (OF1.4) (xid=0x1020304): OFPFMFC_UNKNOWN
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020304):
+(***truncated to 64 bytes from 144***)
+00000000  05 0e 00 90 01 02 03 04-00 00 00 00 00 00 00 00 |................|
+00000010  00 00 00 00 00 00 00 00-ff 03 00 00 00 00 ff ff |................|
+00000020  ff ff ff ff ff ff ff ff-ff ff ff ff 00 00 00 00 |................|
+00000030  00 01 00 42 80 00 00 04-00 00 00 01 80 00 08 06 |...B............|
 send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020305):
  bundle_id=0x89abcdff type=OPEN_REQUEST flags=atomic ordered
 OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020305):
  bundle_id=0x89abcdff type=OPEN_REPLY flags=0
 send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0x1020305):
  bundle_id=0x89abcdff flags=atomic ordered
-OFPT_FLOW_MOD (OF1.4) (xid=0x1020305): ADD table:1 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:4
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020305): MOD_STRICT table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:4
+send: OFPT_BUNDLE_ADD_MESSAGE (OF1.4) (xid=0x1020305):
+ bundle_id=0x89abcdff flags=atomic ordered
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020305): ADD table:49 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:4
 send: OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020305):
  bundle_id=0x89abcdff type=COMMIT_REQUEST flags=atomic ordered
 OFPT_BUNDLE_CONTROL (OF1.4) (xid=0x1020305):
  bundle_id=0x89abcdff type=COMMIT_REPLY flags=0
+send: OFPT_FLOW_MOD (OF1.4) (xid=0x1020305): DEL table:255 priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:3
+OFPT_ERROR (OF1.4) (xid=0x1020305): OFPFMFC_UNKNOWN
+OFPT_FLOW_MOD (OF1.4) (xid=0x1020305):
+(***truncated to 64 bytes from 144***)
+00000000  05 0e 00 90 01 02 03 05-00 00 00 00 00 00 00 00 |................|
+00000010  00 00 00 00 00 00 00 00-ff 03 00 00 00 00 ff ff |................|
+00000020  ff ff ff ff ff ff ff ff-ff ff ff ff 00 00 00 00 |................|
+00000030  00 01 00 42 80 00 00 04-00 00 00 01 80 00 08 06 |...B............|
 OFPT_BARRIER_REPLY (OF1.4) (xid=0x5):
 ])
 
@@ -541,19 +659,28 @@ AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr
 br0<->unix: 2 flow_mods in the last 0 s (2 adds)
 ])
 
-# New rule added last will overwrite older one.
+# New rule added last will overwrite older one (output:3 is old rule // output:4 is new rule).
 AT_CHECK([ovs-ofctl dump-flows br0 --no-stats], [0], [dnl
- table=1, priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:4
+ table=49, priority=65535,arp,in_port=1,vlan_tci=0x0000/0x1fff,dl_src=50:54:00:00:00:06,dl_dst=50:54:00:00:00:05,arp_spa=192.168.0.2,arp_tpa=192.168.0.1,arp_op=2 actions=output:4
 ])
 
 OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255/d
 /My: current_xid: 67305985/d
+/My: current_xid: 84083201/d
+/My: Bundle_add is_asp/d
+/My: init bundle_add flow-mod/d
+/My: activating bundle_flow_mod/d
+/My: Activate Staging Area/d
+/My: Commit: Reseting current_xid and _bid to 0/d
 "])
 AT_CLEANUP
 
 
-
+# TODO
+# It can happen that first bundle is locking the switch.
+# Second bundle will then see that is locked and will not recognize that its also an ASP message (since current_xid != msg xid). 
+# Second Bundle will then handled as normal bundle.
 
 
 
@@ -676,6 +803,7 @@ OVS_VSWITCHD_STOP(["
 /My: current_xid: 67305985/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 167772160/d
 /My: Lock was already set: xid=67305985 trylock=0/d
+/My: init bundle_add flow-mod/d
 "])
 
 AT_CLEANUP
