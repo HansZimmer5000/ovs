@@ -216,7 +216,7 @@ AT_CLEANUP
 
 
 
-AT_SETUP([ASP - Rollback - wrong xid (OpenFlow 1.4)])
+AT_SETUP([ASP - Rollback / Commit - wrong xid (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
 # Test
@@ -331,6 +331,14 @@ AT_CLEANUP
 
 
 
+
+
+
+
+
+
+
+
 AT_SETUP([ASP - Commit (OpenFlow 1.4)])
 OVS_VSWITCHD_START
 
@@ -382,9 +390,9 @@ ff ff ff ff ff ff ff ff ff ff ff ff 00 00 00 00 \
 00 00 00 10 00 00 00 03 00 00 00 00 00 00 00 00 \
 "
 ovs-appctl -t ovs-ofctl ofctl/barrier
-OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 # Check if anyting was alright.
+# OFPBFC_BAD_ID
 AT_CHECK([print_vconn_debug | vconn_sub | ofctl_strip], [0], [dnl
 vconn|DBG|unix: sent (Success): OFPT_HELLO (OF1.6):
  version bitmap: 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
@@ -419,14 +427,17 @@ vconn|DBG|unix: received: OFPT_BARRIER_REQUEST (OF1.4):
 vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 ])
 
+#br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [dnl
-br0<->unix: 1 flow_mods in the last 0 s (1 modifications)
 ])
+# TODO insert at error: OFPFMFC_UNKNOWN // OFPBFC_BAD_ID
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
 /My: Commit: Reseting current_xid to 0/d
+/My: Activate Staging Area/d
 "])
 AT_CLEANUP
 
@@ -623,6 +634,7 @@ ovs-appctl -t ovs-ofctl ofctl/send "\
 05 21 00 10 00 00 00 0a 00 00 00 0b 00 04 00 03"
 ovs-appctl -t ovs-ofctl ofctl/barrier
 
+
 OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 
 AT_CHECK([cat monitor.log], [], [dnl
@@ -665,4 +677,5 @@ OVS_VSWITCHD_STOP(["
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 167772160/d
 /My: Lock was already set: xid=67305985 trylock=0/d
 "])
+
 AT_CLEANUP

@@ -301,7 +301,7 @@ static size_t allocated_ofproto_classes;
 struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
 /* Global lock that protects the ASP operations*/
 pthread_mutex_t xid_read_mutex = PTHREAD_MUTEX_INITIALIZER;
-int current_xid = 0;
+uint32_t current_xid = 0;
 uint32_t current_bid = 0;
 struct ofproto_flow_mod *current_ofm;
 
@@ -6232,25 +6232,35 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         if (fm->command == OFPFC_DELETE && req->request->xid == current_xid)
         {
             // ASP COMMIT
-            // TODO Activate Staging Area
-            VLOG_WARN("My: Activate Staging Area\n");
 
-            ovs_version_t version = current_ofm->version;
-
-            if (ofproto->tables_version < version)
+            if (!current_ofm)
             {
-                //My: Activation of staging area?
-                ofproto->tables_version = version;
-                ofproto->ofproto_class->set_tables_version(
-                    ofproto, ofproto->tables_version);
+                VLOG_WARN("My: No current ASP update");
+                return OFPERR_OFPBFC_BAD_ID;
             }
+            else
+            {
+                // TODO Activate Staging Area
+                VLOG_WARN("My: Activate Staging Area");
+                // Just for Debugging: Remove in production
+                //VLOG_WARN("current_ofm is not null!");
 
-            ofproto_flow_mod_finish(ofproto, current_ofm, req);
-            current_xid = 0;
-            current_bid = 0;
-            VLOG_WARN("My: Commit: Reseting current_xid to 0\n");
+                ovs_version_t version = current_ofm->version;
+                if (ofproto->tables_version < version)
+                {
+                    //My: Activation of staging area?
+                    ofproto->tables_version = version;
+                    ofproto->ofproto_class->set_tables_version(
+                        ofproto, ofproto->tables_version);
+                }
 
-            return OFPERR_OFPFMFC_UNKNOWN;
+                //ofproto_flow_mod_finish(ofproto, current_ofm, req);
+                current_xid = 0;
+                current_bid = 0;
+                VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
+
+                return OFPERR_OFPFMFC_UNKNOWN;
+            }
         }
         else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == current_xid)
         {
@@ -8179,7 +8189,12 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
                       const struct ofputil_flow_mod *fm, struct rule *rule)
     OVS_EXCLUDED(ofproto_mutex)
 {
-    enum ofperr error;
+    enum ofperr error = 0;
+
+    if (!ofm){
+        VLOG_WARN("My: flow_mod_init ofm is null");
+        return 1;
+    }
 
     /* Forward flow mod fields we need later. */
     ofm->command = fm->command;
@@ -8198,6 +8213,7 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
 
     bool check_buffer_id = false;
 
+    
     switch (ofm->command)
     {
     case OFPFC_ADD:
@@ -8210,7 +8226,7 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
         break;
     case OFPFC_MODIFY_STRICT:
         check_buffer_id = true;
-        error = modify_flow_init_strict(ofproto, ofm, fm);
+        //error = modify_flow_init_strict(ofproto, ofm, fm);
         break;
     case OFPFC_DELETE:
         error = delete_flows_init_loose(ofproto, ofm, fm);
@@ -8222,6 +8238,7 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
         error = OFPERR_OFPFMFC_BAD_COMMAND;
         break;
     }
+    /*
     if (!error && check_buffer_id && fm->buffer_id != UINT32_MAX)
     {
         error = OFPERR_OFPBRC_BUFFER_UNKNOWN;
@@ -8230,7 +8247,8 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
     if (error)
     {
         ofproto_flow_mod_uninit(ofm);
-    }
+    }*/
+    
     return error;
 }
 
@@ -8661,7 +8679,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
             {
                 /* Lock Switch by setting current_xid != 0 */
                 current_xid = oh->xid;
-                current_xid = badd.bundle_id;
+                current_bid = badd.bundle_id;
             }
             else
             {
@@ -8677,16 +8695,22 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
         {
             //TODO This makes Problems!!! Lets OVS crash!
 
-            //VLOG_WARN("My: init bundle_flow_mod\n");
-            /*if (is_asp)
+            VLOG_WARN("My: init bundle_flow_mod\n");
+            if (is_asp)
             {
                 VLOG_WARN("init bundle_add flow-mod\n");
+                current_ofm = malloc(sizeof(struct ofproto_flow_mod));
                 error = ofproto_flow_mod_init(ofproto, current_ofm, &fm, NULL);
+                if (error == 1){
+                    // ofm was null
+                    error = 0;
+                }
+                //error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
             }
             else
-            {*/
+            {
                 error = ofproto_flow_mod_init(ofproto, &bmsg->ofm, &fm, NULL);
-            //}
+            }
         }
     }
     else if (type == OFPTYPE_GROUP_MOD)
@@ -8716,14 +8740,13 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
     ofpbuf_uninit(&ofpacts);
 
-    
     if (!error && !is_asp)
     {
         //VLOG_WARN("My: activating bundle_flow_mod\n");
         error = ofp_bundle_add_message(ofconn, badd.bundle_id, badd.flags, bmsg, oh);
     }
-    
-    if (error) 
+
+    if (error)
     {
 
         if (is_asp)
