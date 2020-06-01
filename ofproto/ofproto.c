@@ -6228,8 +6228,10 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         * ovs_mutex_unlock(&ofproto_mutex);   
     */
 
-    /* Identify ASP Message COMMIT & ROLLBACK */
-    if ((fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255)
+    /* Identify ASP Message COMMIT & ROLLBACK
+        Priority = 66535 (0xff ff) is needed to dertmine that this is not a deletion of all rules after a Floodlight Switch change to MASTER which uses Piority = 0.
+    */
+    if ((fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255 && fm->priority == 65535)
     {
         if (fm->command == OFPFC_DELETE && req->request->xid == current_xid)
         {
