@@ -8658,6 +8658,8 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     // TODO Does this change anything?->Think so since the Bundle_add of the real update (not the tableid=255 one) does overwrite the existing current_ofm only if is_asp != 0.
     // TODO Could also check if bundle id == current_bid
 
+
+    VLOG_WARN("My: Received bundle_add with xid (%d), current_xid (%d)", oh->xid, current_xid);
     if (current_xid == oh->xid)
     {
         is_asp = 1;
