@@ -301,9 +301,104 @@ static size_t allocated_ofproto_classes;
 struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
 /* Global lock that protects the ASP operations*/
 pthread_mutex_t xid_read_mutex = PTHREAD_MUTEX_INITIALIZER;
-uint32_t current_xid = 0;
-uint32_t current_bid = 0;
-struct ofproto_flow_mod *current_ofm;
+
+struct asp_map
+{
+    /* Example Value:
+    dpid 0x00 00 00 00 00 00 00 05
+    xid  0xff ff ff ff
+    bid  0xff ff ff ff
+    ofproto_flow_mod ....
+    */
+    uint64_t dpid;
+    uint32_t xid;
+    uint32_t bid;
+    struct ofproto_flow_mod *ofm;
+};
+struct asp_map *init_map(struct asp_map *kv);
+int set_my_asp_map(struct asp_map *kv, struct asp_map new_map);
+struct asp_map *get_my_asp_map(struct asp_map *kv, uint64_t dpid);
+struct asp_map *my_asp_map;
+
+struct asp_map *init_map(struct asp_map *kv)
+{
+    if (kv == NULL)
+    {
+        int needed_size = 100 * sizeof(struct asp_map);
+        struct asp_map *_kv = malloc(needed_size);
+        if (_kv == NULL)
+        {
+            return NULL;
+        }
+        else
+        {
+            return _kv;
+        }
+    }
+    return kv;
+}
+
+int set_my_asp_map(struct asp_map *kv, struct asp_map new_map)
+{
+    if (my_asp_map == NULL)
+    {
+        my_asp_map = init_map(my_asp_map);
+    }
+
+    int error = 0;
+    uint64_t dpid = new_map.dpid;
+    uint64_t _dpid = dpid % 448;
+
+    while (kv[_dpid].dpid != 0 && kv[_dpid].dpid != dpid)
+    {
+        uint64_t next_dpid = _dpid + 1;
+        if (next_dpid == dpid)
+        {
+            // Stop Loop, no free space
+            error = 1;
+            break;
+        }
+        _dpid = next_dpid % 448;
+    }
+
+    kv[_dpid] = new_map;
+    //printf("Set dpid %d ad index %d\n", dpid, _dpid);
+    return error;
+}
+
+struct asp_map *get_my_asp_map(struct asp_map *kv, uint64_t dpid)
+{
+    if (my_asp_map == NULL)
+    {
+        my_asp_map = init_map(my_asp_map);
+    }
+
+    uint64_t _dpid = dpid % 448;
+    //printf("Search dpid (%d), dpid at _dpid: %d\n", dpid, kv[_dpid].dpid);
+    if (kv[_dpid].dpid == dpid)
+    {
+        // Find directly
+        return &kv[_dpid];
+    }
+    else
+    {
+        // Find even if it was not inserted correctly
+        for (size_t i = 0; i < 448; i++)
+        {
+            if (kv[i].dpid == dpid)
+            {
+                return &kv[i];
+            }
+        }
+    }
+    // if not found, create new one.
+    struct asp_map *new_map = malloc(sizeof(struct asp_map));
+    new_map->xid = 0;
+    new_map->bid = 0;
+    new_map->dpid = 0;
+    new_map->ofm = NULL;
+    return new_map;
+}
 
 unsigned ofproto_flow_limit = OFPROTO_FLOW_LIMIT_DEFAULT;
 unsigned ofproto_max_idle = OFPROTO_MAX_IDLE_DEFAULT;
@@ -6231,13 +6326,21 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     /* Identify ASP Message COMMIT & ROLLBACK
         Priority = 66535 (0xff ff) is needed to dertmine that this is not a deletion of all rules after a Floodlight Switch change to MASTER which uses Piority = 0.
     */
+
+    struct asp_map *current_asp_map = get_my_asp_map(my_asp_map, ofproto->datapath_id);
+    if (current_asp_map == NULL)
+    {
+        VLOG_WARN("My: Could not find asp_map");
+        return OFPERR_OFPBFC_OUT_OF_BUNDLES;
+    }
+
     if ((fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255 && fm->priority == 65535)
     {
-        if (fm->command == OFPFC_DELETE && req->request->xid == current_xid)
+        if (fm->command == OFPFC_DELETE && req->request->xid == current_asp_map->xid)
         {
             // ASP COMMIT
 
-            if (!current_ofm)
+            if (!current_asp_map->ofm)
             {
                 VLOG_WARN("My: No current ASP update");
                 return OFPERR_OFPBFC_BAD_ID;
@@ -6248,54 +6351,58 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
                 VLOG_WARN("My: Activate Staging Area");
 
                 ovs_mutex_lock(&ofproto_mutex);
-                ovs_version_t version = current_ofm->version;
+                ovs_version_t version = current_asp_map->ofm->version;
                 if (ofproto->tables_version < version)
                 {
                     ofproto->tables_version = version;
                     ofproto->ofproto_class->set_tables_version(
                         ofproto, ofproto->tables_version);
                 }
-                error = ofproto_flow_mod_start(ofproto, current_ofm);
+                error = ofproto_flow_mod_start(ofproto, current_asp_map->ofm);
                 if (!error)
                 {
                     ofproto_bump_tables_version(ofproto);
-                    ofproto_flow_mod_finish(ofproto, current_ofm, req);
+                    ofproto_flow_mod_finish(ofproto, current_asp_map->ofm, req);
                     ofmonitor_flush(ofproto->connmgr);
                 }
 
-                current_xid = 0;
-                current_bid = 0;
-                VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
+                current_asp_map->xid = 0;
+                current_asp_map->bid = 0;
+                int set_success = set_my_asp_map(my_asp_map, *current_asp_map);
+                //TODO set ofm == null?
+                VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0 (set_success(0=yes) %d)\n", set_success);
                 ovs_mutex_unlock(&ofproto_mutex);
 
                 return OFPERR_OFPFMFC_UNKNOWN;
             }
         }
-        else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == current_xid)
+        else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == current_asp_map->xid)
         {
             // ASP ROLLBACK
             VLOG_WARN("My: Rolling back");
 
             ovs_mutex_lock(&ofproto_mutex);
-            current_xid = 0;
-            current_bid = 0;
-            if (!current_ofm)
+            current_asp_map->xid = 0;
+            current_asp_map->bid = 0;
+            if (!current_asp_map->ofm)
             {
                 VLOG_WARN("My: Update is null, no need to reset update");
             }
             else
             {
-                ofproto_flow_mod_uninit(current_ofm);
-                free(current_ofm);
+                ofproto_flow_mod_uninit(current_asp_map->ofm);
+                free(current_asp_map->ofm);
             }
-            VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
+            //TODO set ofm = null?
+            int set_success = set_my_asp_map(my_asp_map, *current_asp_map);
+            VLOG_WARN("My: Rollback: Reseting current_xid to 0 (set_success(0=yes) %d)\n", set_success);
             ovs_mutex_unlock(&ofproto_mutex);
 
             return OFPERR_OFPFMFC_UNKNOWN;
         }
         else
         {
-            VLOG_WARN("My: Rollback or Commit received but xid(%d) was not current_xid(%d)\n", req->request->xid, current_xid);
+            VLOG_WARN("My: Rollback or Commit received but xid(%d) was not current_xid(%d)\n", req->request->xid, current_asp_map->xid);
             /*TODO Return of this error code is not part of ASP! Isthis OK? */
             return OFPERR_OFPBFC_MSG_BAD_XID;
         }
@@ -8412,6 +8519,13 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
     }
     else
     {
+        struct asp_map *current_asp_map = get_my_asp_map(my_asp_map, ofproto->datapath_id);
+        if (current_asp_map == NULL)
+        {
+            VLOG_WARN("My: Could not find asp_map");
+            return OFPERR_OFPBFC_OUT_OF_BUNDLES;
+        }
+
         bool prev_is_port_mod = false;
 
         error = 0;
@@ -8489,9 +8603,9 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
             {
                 if (be->type == OFPTYPE_FLOW_MOD)
                 {
-                    if (bundle->id == current_bid)
+                    if (bundle->id == current_asp_map->bid)
                     {
-                        ofproto_flow_mod_revert(ofproto, current_ofm);
+                        ofproto_flow_mod_revert(ofproto, current_asp_map->ofm);
                     }
                     else
                     {
@@ -8524,7 +8638,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                      * processing. */
                     port_mod_finish(ofconn, &be->opm.pm, be->opm.port);
                 }
-                else if (!(bundle->id == current_bid))
+                else if (!(bundle->id == current_asp_map->bid))
                 {
                     version =
                         (be->type == OFPTYPE_FLOW_MOD) ? be->ofm.version : (be->type == OFPTYPE_GROUP_MOD) ? be->ogm.version : (be->type == OFPTYPE_PACKET_OUT) ? be->opo.version : version;
@@ -8658,9 +8772,15 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     // TODO Does this change anything?->Think so since the Bundle_add of the real update (not the tableid=255 one) does overwrite the existing current_ofm only if is_asp != 0.
     // TODO Could also check if bundle id == current_bid
 
+    struct asp_map *current_asp_map = get_my_asp_map(my_asp_map, ofproto->datapath_id);
+    if (current_asp_map == NULL)
+    {
+        VLOG_WARN("My: Could not find asp_map");
+        return OFPERR_OFPBFC_OUT_OF_BUNDLES;
+    }
 
-    VLOG_WARN("My: Received bundle_add with xid (%d), current_xid (%d)", oh->xid, current_xid);
-    if (current_xid == oh->xid)
+    VLOG_WARN("My: Received bundle_add with xid (%d), current_xid (%d)", oh->xid, current_asp_map->xid);
+    if (current_asp_map->xid == oh->xid)
     {
         is_asp = 1;
         VLOG_WARN("My: Bundle_add is_asp");
@@ -8689,20 +8809,20 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
             /* Check if switch is locked or free */
             int got_lock = pthread_mutex_trylock(&xid_read_mutex);
-            if (got_lock == 0 && oh->xid != 0 && current_xid == 0)
+            if (got_lock == 0 && oh->xid != 0 && current_asp_map->xid == 0)
             {
                 /* Lock Switch by setting current_xid != 0 */
-                current_xid = oh->xid;
-                current_bid = badd.bundle_id;
+                current_asp_map->xid = oh->xid;
+                current_asp_map->bid = badd.bundle_id;
             }
             else
             {
                 /* return ofperr error since could not read xid due to locked*/
-                VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_xid, got_lock);
+                VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_asp_map->xid, got_lock);
                 return OFPERR_OFPBFC_MSG_FAILED;
             }
             pthread_mutex_unlock(&xid_read_mutex);
-            VLOG_WARN("My: current_xid: %d\n", current_xid);
+            VLOG_WARN("My: current_xid: %d\n", current_asp_map->xid);
         }
 
         if (!error)
@@ -8716,11 +8836,11 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
                 else
                 {
                     /* ASP: Additional check, just in case the xid was already locked which is not an error saved in "error" var. */
-                    if (oh->xid == current_xid)
+                    if (oh->xid == current_asp_map->xid)
                     {
                         VLOG_WARN("My: init bundle_add flow-mod\n");
-                        current_ofm = malloc(sizeof(struct ofproto_flow_mod));
-                        error = ofproto_flow_mod_init(ofproto, current_ofm, &fm, NULL);
+                        current_asp_map->ofm = malloc(sizeof(struct ofproto_flow_mod));
+                        error = ofproto_flow_mod_init(ofproto, current_asp_map->ofm, &fm, NULL);
                     }
                 }
             }
@@ -8770,15 +8890,16 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
         {
             VLOG_WARN("bundle_add error! Freeing\n");
             /* ASP VoteLock Fail, free xid again */
-            if (current_xid == oh->xid)
+            if (current_asp_map->xid == oh->xid)
             {
-                current_xid = 0;
+                current_asp_map->xid = 0;
             }
 
             /* Set ofm to bmsg so its freed.*/
             // does not work:
             //&bmsg->ofm = current_ofm;
-            ofproto_flow_mod_uninit(current_ofm);
+            ofproto_flow_mod_uninit(current_asp_map->ofm);
+            // TODO set ofm == null?
         }
 
         ofp_bundle_entry_free(bmsg);
