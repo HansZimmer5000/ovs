@@ -301,7 +301,6 @@ static size_t allocated_ofproto_classes;
 struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
 /* Global lock that protects the ASP operations*/
 pthread_mutex_t xid_read_mutex = PTHREAD_MUTEX_INITIALIZER;
-struct asp_map *my_asp_map;
 
 struct asp_map
 {
@@ -316,12 +315,16 @@ struct asp_map
     uint32_t bid;
     struct ofproto_flow_mod *ofm;
 };
+struct asp_map *init_map(struct asp_map *kv);
+int set_my_asp_map(struct asp_map *kv, struct asp_map new_map);
+struct asp_map *get_my_asp_map(struct asp_map *kv, uint64_t dpid);
+struct asp_map *my_asp_map;
 
 struct asp_map *init_map(struct asp_map *kv)
 {
     if (kv == NULL)
     {
-        int needed_size = 448 * sizeof(struct asp_map);
+        int needed_size = 100 * sizeof(struct asp_map);
         struct asp_map *_kv = malloc(needed_size);
         if (_kv == NULL)
         {
@@ -337,6 +340,11 @@ struct asp_map *init_map(struct asp_map *kv)
 
 int set_my_asp_map(struct asp_map *kv, struct asp_map new_map)
 {
+    if (my_asp_map == NULL)
+    {
+        my_asp_map = init_map(my_asp_map);
+    }
+
     int error = 0;
     uint64_t dpid = new_map.dpid;
     uint64_t _dpid = dpid % 448;
@@ -360,6 +368,11 @@ int set_my_asp_map(struct asp_map *kv, struct asp_map new_map)
 
 struct asp_map *get_my_asp_map(struct asp_map *kv, uint64_t dpid)
 {
+    if (my_asp_map == NULL)
+    {
+        my_asp_map = init_map(my_asp_map);
+    }
+
     uint64_t _dpid = dpid % 448;
     //printf("Search dpid (%d), dpid at _dpid: %d\n", dpid, kv[_dpid].dpid);
     if (kv[_dpid].dpid == dpid)
@@ -379,7 +392,7 @@ struct asp_map *get_my_asp_map(struct asp_map *kv, uint64_t dpid)
         }
     }
     // if not found, create new one.
-    struct asp_map * new_map;
+    struct asp_map *new_map = malloc(sizeof(struct asp_map));
     new_map->xid = 0;
     new_map->bid = 0;
     new_map->dpid = 0;
@@ -6355,7 +6368,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
 
                 current_asp_map->xid = 0;
                 current_asp_map->bid = 0;
-                int set_success = set_my_asp_map(my_asp_map, current_asp_map);
+                int set_success = set_my_asp_map(my_asp_map, *current_asp_map);
                 //TODO set ofm == null?
                 VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0 (set_success(0=yes) %d)\n", set_success);
                 ovs_mutex_unlock(&ofproto_mutex);
@@ -6381,8 +6394,8 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
                 free(current_asp_map->ofm);
             }
             //TODO set ofm = null?
-            int set_success = set_my_asp_map(my_asp_map, current_asp_map);
-            VLOG_WARN("My: Rollback: Reseting current_xid to 0 (set_success(0=yes) %d)\n");
+            int set_success = set_my_asp_map(my_asp_map, *current_asp_map);
+            VLOG_WARN("My: Rollback: Reseting current_xid to 0 (set_success(0=yes) %d)\n", set_success);
             ovs_mutex_unlock(&ofproto_mutex);
 
             return OFPERR_OFPFMFC_UNKNOWN;
