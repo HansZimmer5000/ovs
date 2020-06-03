@@ -86,6 +86,7 @@ OFPT_BARRIER_REPLY (OF1.4) (xid=0x4):
 ])
 
 OVS_VSWITCHD_STOP(["
+/My: Received bundle_add with xid (67305985), current_xid (0)/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
 /My: init bundle_add flow-mod/d
@@ -215,6 +216,8 @@ vconn|DBG|unix: sent (Success): OFPT_BARRIER_REPLY (OF1.4):
 AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr|INFO|//'], [0], [])
 
 OVS_VSWITCHD_STOP(["
+/My: Received bundle_add with xid (67305985), current_xid (0)/d
+/My: Received bundle_add with xid (67305985), current_xid (67305985)/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
 /My: Bundle_add is_asp/d
@@ -329,6 +332,7 @@ AT_CHECK([grep " flow_mods in the last " ovs-vswitchd.log | sed -e 's/^.*connmgr
 ])
 
 OVS_VSWITCHD_STOP(["
+/My: Received bundle_add with xid (67305985), current_xid (0)/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
 /My: init bundle_add flow-mod/d
@@ -473,6 +477,8 @@ br0<->unix: 1 flow_mods in the last 0 s (1 adds)
 ])
 
 OVS_VSWITCHD_STOP(["
+/My: Received bundle_add with xid (67305985), current_xid (0)/d
+/My: Received bundle_add with xid (67305985), current_xid (67305985)/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
 /My: Bundle_add is_asp/d
@@ -665,6 +671,10 @@ AT_CHECK([ovs-ofctl dump-flows br0 --no-stats], [0], [dnl
 ])
 
 OVS_VSWITCHD_STOP(["
+/My: Received bundle_add with xid (67305985), current_xid (0)/d
+/My: Received bundle_add with xid (67305985), current_xid (67305985)/d
+/My: Received bundle_add with xid (84083201), current_xid (0)/d
+/My: Received bundle_add with xid (84083201), current_xid (84083201)/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255/d
 /My: current_xid: 67305985/d
 /My: current_xid: 84083201/d
@@ -799,6 +809,8 @@ OFPT_BARRIER_REPLY (OF1.4) (xid=0x5):
 ])
 
 OVS_VSWITCHD_STOP(["
+/My: Received bundle_add with xid (67305985), current_xid (0)/d
+/My: Received bundle_add with xid (167772160), current_xid (67305985)/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 67305985/d
 /My: current_xid: 67305985/d
 /My: Bundle Add FlowMod Command: 2 with tableid: 255 and xid: 167772160/d

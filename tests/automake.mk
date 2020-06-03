@@ -321,7 +321,6 @@ noinst_PROGRAMS += tests/ovstest
 tests_ovstest_SOURCES = \
 	tests/ovstest.c \
 	tests/ovstest.h \
-	tests/test-asp.c \
 	tests/test-aes128.c \
 	tests/test-atomic.c \
 	tests/test-bundle.c \
