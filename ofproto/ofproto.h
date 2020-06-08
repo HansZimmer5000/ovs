@@ -514,6 +514,27 @@ int ofproto_port_get_cfm_status(const struct ofproto *,
                                 ofp_port_t ofp_port,
                                 struct cfm_status *);
 
+/* ASP MAP */
+struct asp_map
+{
+    /* Example Value:
+    dpid 0x00 00 00 00 00 00 00 05
+    xid  0xff ff ff ff
+    bid  0xff ff ff ff
+    ofproto_flow_mod ....
+    */
+    uint64_t dpid;
+    uint32_t xid;
+    uint32_t bid;
+    struct ofproto_flow_mod *ofm;
+};
+struct asp_map *init_map(struct asp_map *kv);
+int set_my_asp_map(struct asp_map new_map);
+struct asp_map *get_my_asp_map(uint64_t dpid);
+struct asp_map *my_asp_map;
+
+
+
 /* Table configuration */
 
 enum ofputil_table_miss ofproto_table_get_miss_config(const struct ofproto *,
