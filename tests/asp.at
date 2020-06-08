@@ -38,7 +38,7 @@ OVS_VSWITCHD_START
 
 # Test
 # - How to check whether lock is set -> in Logs and the fact that it does not return an error message
-# - How to check whether staging area is created? -> TODO
+# - How to check whether staging area is created? -> Logs
 # - Send Bundle and make sure switch answers with a confirm. -> its a normal Commit reply
 
 # Start a monitor, use the required protocol version
@@ -112,7 +112,7 @@ OVS_VSWITCHD_START
 
 # Test
 # - How to check whether lock is freed? -> End logs
-# - How to check whether staging area is removed after rollback? -> TODO
+# - How to check whether staging area is removed after rollback? -> Logs
 # - Send a bundle that is not successfull (returns with reject) -> done
 # - send Rollback and make sure the switch answers with Finish. -> error  unkown
 
@@ -123,7 +123,6 @@ AT_CAPTURE_FILE([monitor.log])
 ovs-appctl time/stop
 # More info in: ovsdb-server.log
 # Raw Messages in ofproto.at:5343,5408
-
 
 # BUNDLE_CONTROL OPEN
 ovs-appctl -t ovs-ofctl ofctl/send "\
@@ -244,7 +243,7 @@ OVS_VSWITCHD_START
 
 # Test
 # - How to check whether lock is freed? -> End Logs
-# - How to check whether staging area is removed after rollback? -> TODO
+# - How to check whether staging area is removed after rollback? -> Logs
 # - Send a bundle that is not successfull (returns with reject) -> done
 # - Send Rollback with wrong xid. -> error  bad_xid
 
@@ -369,7 +368,7 @@ OVS_VSWITCHD_START
 
 # Test
 # - How to check whether lock is freed? -> End logs
-# - How to check whether staging area is activated after commit? -> TODO
+# - How to check whether staging area is activated after commit? -> Logs
 # - Send a bundle that is successfull (returns with confirm) -> normal commit reply
 # - Send Commit and make sure the switch answers with Finish. -> error  unkown
 
@@ -505,7 +504,7 @@ AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
 
 # Test
-# - How to check if the switch really rejected due to conflicting rules? -> TODO
+# - How to check if the switch really rejected due to conflicting rules? -> Logs
 # - Send a bundle before that sets special rules. -> done
 # - Send another bundle that then wants to add rules that will conflict with the rules from before. -> TODO since this will only overwrite the old rule but not throw an error! (see dump at the end, only containing one rule, the new one.)
 
