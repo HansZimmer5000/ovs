@@ -33,6 +33,7 @@ extern "C" {
 
 struct ofp_bundle_entry {
     struct ovs_list   node;
+    bool lockFlag;
     enum ofptype      type;  /* OFPTYPE_FLOW_MOD, OFPTYPE_PORT_MOD,
                               * OFPTYPE_GROUP_MOD, OFPTYPE_PACKET_OUT. */
     union {

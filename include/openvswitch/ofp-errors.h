@@ -511,6 +511,12 @@ enum ofperr {
     /* OF1.2+(8,2).  Permissions error. */
     OFPERR_OFPTMFC_EPERM,
 
+    /* OF1.2+(8,3).  Switch reservation failed. */
+    OFPERR_SW_RESERVATION_FAILED,
+
+	/* OF1.2+(8,4).  Switch reservation attempt. */
+	OFPERR_SW_RESERVATION_ATTEMPT,
+
 /* ## --------------------- ## */
 /* ## OFPET_QUEUE_OP_FAILED ## */
 /* ## --------------------- ## */

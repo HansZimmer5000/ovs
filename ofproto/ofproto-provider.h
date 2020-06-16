@@ -74,6 +74,9 @@ struct ofproto {
     char *type;                 /* Datapath type. */
     char *name;                 /* Datapath name. */
 
+    uint32_t reservationFlag;
+    long reservationStart;
+
     /* Settings. */
     uint64_t fallback_dpid;     /* Datapath ID if no better choice found. */
     uint64_t datapath_id;       /* Datapath ID. */
