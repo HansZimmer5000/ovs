@@ -6308,7 +6308,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     */
     if ((fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255 && fm->priority == 65535)
     {
-        if (fm->command == OFPFC_DELETE && req->request->xid == current_map->xid)
+        if (fm->command == OFPFC_DELETE && req->request->xid == ofproto->asp_xid)
         {
             // ASP COMMIT
 
@@ -6327,7 +6327,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
                 current_map->ofm->version = ofproto->tables_version + 1;
                 ovs_version_t version = current_map->ofm->version;
 
-                VLOG_WARN("My: ofproto:%d  my:%d", ofproto->tables_version, version);
+                //VLOG_WARN("My: ofproto:%d  my:%d", ofproto->tables_version, version);
                 if (ofproto->tables_version < version)
                 {
                     ofproto->tables_version = version;
@@ -6346,7 +6346,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
                     ofmonitor_flush(ofproto->connmgr);
                 }
 
-                current_map->xid = 0;
+                ofproto->asp_xid = 0;
                 current_map->bid = 0;
                 set_my_asp_map(*current_map);
                 VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
@@ -6355,13 +6355,13 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
                 return OFPERR_OFPFMFC_UNKNOWN;
             }
         }
-        else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == current_map->xid)
+        else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == ofproto->asp_xid)
         {
             // ASP ROLLBACK
             VLOG_WARN("My: Rolling back");
 
             ovs_mutex_lock(&ofproto_mutex);
-            current_map->xid = 0;
+            ofproto->asp_xid = 0;
             current_map->bid = 0;
             if (!current_map->ofm)
             {
@@ -6380,7 +6380,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         }
         else
         {
-            VLOG_WARN("My: Rollback or Commit received but xid(%d) was not current_xid(%d)\n", req->request->xid, current_map->xid);
+            VLOG_WARN("My: Rollback or Commit received but xid(%d) was not current_xid(%d)\n", req->request->xid, ofproto->asp_xid);
             /*TODO Return of this error code is not part of ASP! Isthis OK? */
             return OFPERR_OFPBFC_MSG_BAD_XID;
         }
@@ -6388,7 +6388,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     else
     {
         // not ASP
-        VLOG_WARN("My: Flow Mod is not ASP (no commit / rollback)");
+        //VLOG_WARN("%s My: Flow Mod is not ASP (no commit / rollback): Command(%d), table_id(%d), prio(%d)", ofproto->name, fm->command, fm->table_id, fm->priority);
         error = ofproto_flow_mod_init(ofproto, &ofm, fm, NULL);
         if (error)
         {
@@ -8499,7 +8499,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
     else
     {
         struct asp_map *current_map = get_my_asp_map(ofproto->datapath_id);
-        VLOG_WARN("My: Doing Commit with map=%d\n", current_map);
+        //VLOG_WARN("My: Doing Commit with map=%d\n", current_map);
 
         bool prev_is_port_mod = false;
 
@@ -8750,8 +8750,8 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     // Does this change anything?->Think so since the Bundle_add of the real update (not the tableid=255 one) does overwrite the existing current_ofm only if is_asp != 0.
     // TODO Could also check if bundle id == current_bid
 
-    VLOG_WARN("My: Received bundle_add with xid (%d), current_xid (%d)", oh->xid, current_map->xid);
-    if (current_map->xid == oh->xid)
+    VLOG_WARN("My: Received bundle_add with xid (%d), current_xid (%d)", oh->xid, ofproto->asp_xid);
+    if (ofproto->asp_xid == oh->xid)
     {
         is_asp = 1;
         VLOG_WARN("My: Bundle_add is_asp");
@@ -8780,22 +8780,22 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
             /* Check if switch is locked or free */
             int got_lock = pthread_mutex_trylock(&xid_read_mutex);
-            if (got_lock == 0 && oh->xid != 0 && current_map->xid == 0)
+            if (got_lock == 0 && oh->xid != 0 && ofproto->asp_xid == 0)
             {
                 /* Lock Switch by setting current_xid != 0 */
-                current_map->xid = oh->xid;
+                ofproto->asp_xid = oh->xid;
                 current_map->bid = badd.bundle_id;
             }
             else
             {
                 /* return ofperr error since could not read xid due to locked*/
-                VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_map->xid, got_lock);
+                VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", ofproto->asp_xid, got_lock);
 
                 pthread_mutex_unlock(&xid_read_mutex);
                 return OFPERR_OFPBFC_MSG_FAILED;
             }
             pthread_mutex_unlock(&xid_read_mutex);
-            VLOG_WARN("My: current_xid: %d\n", current_map->xid);
+            VLOG_WARN("My: current_xid: %d\n", ofproto->asp_xid);
         }
 
         if (!error)
@@ -8809,7 +8809,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
                 else
                 {
                     /* ASP: Additional check, just in case the xid was already locked which is not an error saved in "error" var. */
-                    if (oh->xid == current_map->xid)
+                    if (oh->xid == ofproto->asp_xid)
                     {
                         VLOG_WARN("My: init bundle_add flow-mod\n");
                         current_map->ofm = malloc(sizeof(struct ofproto_flow_mod));
@@ -8863,9 +8863,9 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
         {
             VLOG_WARN("bundle_add error! Freeing\n");
             /* ASP VoteLock Fail, free xid again */
-            if (current_map->xid == oh->xid)
+            if (ofproto->asp_xid == oh->xid)
             {
-                current_map->xid = 0;
+                ofproto->asp_xid = 0;
             }
 
             /* Set ofm to bmsg so its freed.*/
