@@ -78,6 +78,9 @@ struct ofproto {
     uint64_t fallback_dpid;     /* Datapath ID if no better choice found. */
     uint64_t datapath_id;       /* Datapath ID. */
     uint32_t asp_xid;   /* ASP Lock of the current Switch */
+    uint32_t asp_bid;   /* ASP Bundle ID */
+    struct ofproto_flow_mod *asp_ofm; /* ASP Flow Mod */
+
     bool forward_bpdu;          /* Option to allow forwarding of BPDU frames
                                  * when NORMAL action is invoked. */
     char *mfr_desc;             /* Manufacturer (NULL for default). */
