@@ -417,9 +417,26 @@ static enum ofperr asp_commit(const struct openflow_mod_requester *req, struct o
     }
 }
 
-static void asp_rollback()
+static enum ofperr asp_rollback(struct ofproto *ofproto)
 {
-    //TODO
+    VLOG_WARN("My: Rolling back");
+
+    ovs_mutex_lock(&ofproto_mutex);
+    ofproto->asp_xid = 0;
+    ofproto->asp_bid = 0;
+    if (!ofproto->asp_ofm)
+    {
+        VLOG_WARN("My: Update is null, no need to reset update");
+    }
+    else
+    {
+        ofproto_flow_mod_uninit(ofproto->asp_ofm);
+        free(ofproto->asp_ofm);
+    }
+    VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
+    ovs_mutex_unlock(&ofproto_mutex);
+
+    return OFPERR_OFPFMFC_UNKNOWN;
 }
 /* ASP functions end */
 
@@ -6345,25 +6362,10 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         }
         else if (asp_type == ASP_ROLLBACK)
         {
-            // ASP ROLLBACK
-            VLOG_WARN("My: Rolling back");
-
-            ovs_mutex_lock(&ofproto_mutex);
-            ofproto->asp_xid = 0;
-            ofproto->asp_bid = 0;
-            if (!ofproto->asp_ofm)
-            {
-                VLOG_WARN("My: Update is null, no need to reset update");
-            }
-            else
-            {
-                ofproto_flow_mod_uninit(ofproto->asp_ofm);
-                free(ofproto->asp_ofm);
-            }
-            VLOG_WARN("My: Rollback: Reseting current_xid to 0\n");
-            ovs_mutex_unlock(&ofproto_mutex);
-
-            return OFPERR_OFPFMFC_UNKNOWN;
+             error = asp_rollback(ofproto);
+             if (error){
+                 return error;
+             }
         }
         else
         {
