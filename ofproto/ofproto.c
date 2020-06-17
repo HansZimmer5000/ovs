@@ -318,6 +318,111 @@ static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 /* The default value of true waits for flow restore. */
 static bool flow_restore_wait = true;
 
+/* ASP Function */
+static bool is_asp_flowmod(const struct ofputil_flow_mod *fm)
+{
+    return (fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255 && fm->priority == 65535;
+}
+
+enum asp_types
+{
+    ASP_UNKOWN,
+    ASP_VOTELOCK,
+    ASP_COMMIT,
+    ASP_ROLLBACK
+};
+
+static enum asp_types
+detect_asp_type(const struct ofputil_flow_mod *fm, const struct openflow_mod_requester *req, struct ofproto *ofproto)
+{
+    if (fm->command == OFPFC_DELETE && req->request->xid == ofproto->asp_xid)
+    {
+        return ASP_COMMIT;
+    }
+    else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == ofproto->asp_xid)
+    {
+        return ASP_ROLLBACK;
+    }
+    else
+    {
+        return ASP_UNKOWN;
+    }
+}
+
+static void asp_switch_is_locked()
+{
+    //TODO
+}
+
+static void asp_lock_switch()
+{
+    //TODO
+}
+
+static void asp_unlock_switch()
+{
+    //TODO
+}
+
+static void asp_vote_lock()
+{
+    //TODO
+}
+
+static enum ofperr asp_commit(const struct openflow_mod_requester *req, struct ofproto *ofproto)
+{
+    enum ofperr error;
+    if (!ofproto->asp_ofm)
+    {
+        VLOG_WARN("My: No current ASP updates");
+        return OFPERR_OFPBFC_BAD_ID;
+    }
+    else
+    {
+        // Activate Staging Area
+        VLOG_WARN("My: Activate Staging Area");
+
+        ovs_mutex_lock(&ofproto_mutex);
+
+        ofproto->asp_ofm->version = ofproto->tables_version + 1;
+        ovs_version_t version = ofproto->asp_ofm->version;
+
+        //VLOG_WARN("My: ofproto:%d  my:%d", ofproto->tables_version, version);
+        if (ofproto->tables_version < version)
+        {
+            ofproto->tables_version = version;
+            ofproto->ofproto_class->set_tables_version(
+                ofproto, ofproto->tables_version);
+        }
+        else
+        {
+            //TODO What todo if version is le than ofprotos?
+            // If 0, then just get ofproto->version +=1?
+        }
+        // TODO if version-if fails, this lets switch crash
+        error = ofproto_flow_mod_start(ofproto, ofproto->asp_ofm);
+        if (!error)
+        {
+            ofproto_bump_tables_version(ofproto);
+            ofproto_flow_mod_finish(ofproto, ofproto->asp_ofm, req);
+            ofmonitor_flush(ofproto->connmgr);
+        }
+
+        ofproto->asp_xid = 0;
+        ofproto->asp_bid = 0;
+        VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
+        ovs_mutex_unlock(&ofproto_mutex);
+
+        return OFPERR_OFPFMFC_UNKNOWN;
+    }
+}
+
+static void asp_rollback()
+{
+    //TODO
+}
+/* ASP functions end */
+
 /* Must be called to initialize the ofproto library.
  *
  * The caller may pass in 'iface_hints', which contains an shash of
@@ -6228,54 +6333,17 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     /* Identify ASP Message COMMIT & ROLLBACK
         Priority = 66535 (0xff ff) is needed to dertmine that this is not a deletion of all rules after a Floodlight Switch change to MASTER which uses Piority = 0.
     */
-    if ((fm->command == OFPFC_DELETE || fm->command == OFPFC_DELETE_STRICT) && fm->table_id == 255 && fm->priority == 65535)
+    if (is_asp_flowmod(fm))
     {
-        if (fm->command == OFPFC_DELETE && req->request->xid == ofproto->asp_xid)
+        enum asp_types asp_type = detect_asp_type(fm, req, ofproto);
+        if (asp_type == ASP_COMMIT)
         {
-            // ASP COMMIT
-            if (!ofproto->asp_ofm)
-            {
-                VLOG_WARN("My: No current ASP updates");
-                return OFPERR_OFPBFC_BAD_ID;
-            }
-            else
-            {
-                // Activate Staging Area
-                VLOG_WARN("My: Activate Staging Area");
-
-                ovs_mutex_lock(&ofproto_mutex);
-                
-                ofproto->asp_ofm->version = ofproto->tables_version + 1;
-                ovs_version_t version = ofproto->asp_ofm->version;
-
-                //VLOG_WARN("My: ofproto:%d  my:%d", ofproto->tables_version, version);
-                if (ofproto->tables_version < version)
-                {
-                    ofproto->tables_version = version;
-                    ofproto->ofproto_class->set_tables_version(
-                        ofproto, ofproto->tables_version);
-                } else {
-                    //TODO What todo if version is le than ofprotos?
-                    // If 0, then just get ofproto->version +=1?
-                }
-                // TODO if version-if fails, this lets switch crash
-                error = ofproto_flow_mod_start(ofproto, ofproto->asp_ofm);
-                if (!error)
-                {
-                    ofproto_bump_tables_version(ofproto);
-                    ofproto_flow_mod_finish(ofproto, ofproto->asp_ofm, req);
-                    ofmonitor_flush(ofproto->connmgr);
-                }
-
-                ofproto->asp_xid = 0;
-                ofproto->asp_bid = 0;
-                VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
-                ovs_mutex_unlock(&ofproto_mutex);
-
-                return OFPERR_OFPFMFC_UNKNOWN;
-            }
+             error = asp_commit(req, ofproto);
+             if (error){
+                 return error;
+             }
         }
-        else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == ofproto->asp_xid)
+        else if (asp_type == ASP_ROLLBACK)
         {
             // ASP ROLLBACK
             VLOG_WARN("My: Rolling back");

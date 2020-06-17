@@ -520,6 +520,10 @@ int ofproto_port_get_cfm_status(const struct ofproto *,
 enum ofputil_table_miss ofproto_table_get_miss_config(const struct ofproto *,
                                                       uint8_t table_id);
 
+
+static void
+ofproto_bump_tables_version(struct ofproto *ofproto);
+
 #ifdef  __cplusplus
 }
 #endif
