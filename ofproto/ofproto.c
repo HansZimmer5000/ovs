@@ -365,16 +365,26 @@ static enum asp_types detect_asp_type_bundleadd(struct ofproto *ofproto, const s
     }
 }
 
-static void asp_switch_is_locked()
+static bool asp_switch_is_unlocked(uint32_t received_xid, uint32_t current_xid)
 {
-    //TODO
+    bool result = false;
+    int got_lock = pthread_mutex_trylock(&xid_read_mutex);
+    if (got_lock == 0)
+    {
+         result = (received_xid != 0 && current_xid == 0);
+    } 
+
+    if (!result){
+        VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_xid, got_lock);
+    }
+
+    return result;
 }
 
 static enum ofperr asp_lock_switch(const struct ofp_header *oh, struct ofproto *ofproto, struct ofputil_bundle_add_msg badd)
 {
     enum ofperr error = 0;
-    int got_lock = pthread_mutex_trylock(&xid_read_mutex);
-    if (got_lock == 0 && oh->xid != 0 && ofproto->asp_xid == 0)
+    if (asp_switch_is_unlocked(oh->xid, ofproto->asp_xid))
     {
         /* Lock Switch by setting current_xid != 0 */
         ofproto->asp_xid = oh->xid;
@@ -385,16 +395,16 @@ static enum ofperr asp_lock_switch(const struct ofp_header *oh, struct ofproto *
     else
     {
         /* return ofperr error since could not read xid due to locked*/
-        VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", ofproto->asp_xid, got_lock);
         pthread_mutex_unlock(&xid_read_mutex);
         error = OFPERR_OFPBFC_MSG_FAILED;
     }
     return error;
 }
 
-static void asp_unlock_switch()
+static void asp_unlock_switch(struct ofproto *ofproto)
 {
-    //TODO
+    ofproto->asp_xid = 0;
+    ofproto->asp_bid = 0;
 }
 
 static enum ofperr asp_vote_lock(struct ofputil_flow_mod *fm, const struct ofp_header *oh, struct ofproto *ofproto)
@@ -415,14 +425,14 @@ static enum ofperr asp_vote_lock(struct ofputil_flow_mod *fm, const struct ofp_h
             error = ofproto_flow_mod_init(ofproto, ofproto->asp_ofm, fm, NULL);
         }
     }
-    
-    if(error){
-        //TODO add to asp_vote_lock
+
+    if (error)
+    {
         VLOG_WARN("bundle_add error! Freeing\n");
         /* ASP VoteLock Fail, free xid again */
         if (ofproto->asp_xid == oh->xid)
         {
-            ofproto->asp_xid = 0;
+            asp_unlock_switch(ofproto);
         }
 
         /* Set ofm to bmsg so its freed.*/
@@ -473,8 +483,7 @@ static enum ofperr asp_commit(const struct openflow_mod_requester *req, struct o
             ofmonitor_flush(ofproto->connmgr);
         }
 
-        ofproto->asp_xid = 0;
-        ofproto->asp_bid = 0;
+        asp_unlock_switch(ofproto);
         VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
         ovs_mutex_unlock(&ofproto_mutex);
 
@@ -487,8 +496,7 @@ static enum ofperr asp_rollback(struct ofproto *ofproto)
     VLOG_WARN("My: Rolling back");
 
     ovs_mutex_lock(&ofproto_mutex);
-    ofproto->asp_xid = 0;
-    ofproto->asp_bid = 0;
+    asp_unlock_switch(ofproto);
     if (!ofproto->asp_ofm)
     {
         VLOG_WARN("My: Update is null, no need to reset update");
@@ -8671,7 +8679,6 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
                      * this version visible to lookups at once. */
                     if (ofproto->tables_version < version)
                     {
-                        //My: Activation of staging area?
                         ofproto->tables_version = version;
                         ofproto->ofproto_class->set_tables_version(
                             ofproto, ofproto->tables_version);
@@ -8876,7 +8883,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     }
 
     /* Additional check needed since when asp fails bmsg->ofm is not set and switch crashes! */
-    if ((error && !is_asp) || (error && is_asp &&  error != OFPERR_OFPBFC_MSG_FAILED))
+    if ((error && !is_asp) || (error && is_asp && error != OFPERR_OFPBFC_MSG_FAILED))
     {
         ofp_bundle_entry_free(bmsg);
     }
