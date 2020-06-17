@@ -371,10 +371,11 @@ static bool asp_switch_is_unlocked(uint32_t received_xid, uint32_t current_xid)
     int got_lock = pthread_mutex_trylock(&xid_read_mutex);
     if (got_lock == 0)
     {
-         result = (received_xid != 0 && current_xid == 0);
-    } 
+        result = (received_xid != 0 && current_xid == 0);
+    }
 
-    if (!result){
+    if (!result)
+    {
         VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", current_xid, got_lock);
     }
 
@@ -446,11 +447,11 @@ static enum ofperr asp_vote_lock(struct ofputil_flow_mod *fm, const struct ofp_h
 
 static enum ofperr asp_commit(const struct openflow_mod_requester *req, struct ofproto *ofproto)
 {
-    enum ofperr error;
+    enum ofperr error = 0;
     if (!ofproto->asp_ofm)
     {
         VLOG_WARN("My: No current ASP updates");
-        return OFPERR_OFPBFC_BAD_ID;
+        error = OFPERR_OFPBFC_BAD_ID;
     }
     else
     {
@@ -468,27 +469,30 @@ static enum ofperr asp_commit(const struct openflow_mod_requester *req, struct o
             ofproto->tables_version = version;
             ofproto->ofproto_class->set_tables_version(
                 ofproto, ofproto->tables_version);
+
+            error = ofproto_flow_mod_start(ofproto, ofproto->asp_ofm);
+            if (!error)
+            {
+                ofproto_bump_tables_version(ofproto);
+                ofproto_flow_mod_finish(ofproto, ofproto->asp_ofm, req);
+                ofmonitor_flush(ofproto->connmgr);
+            }
+
+            asp_unlock_switch(ofproto);
+            VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
+            ovs_mutex_unlock(&ofproto_mutex);
+
+            error = OFPERR_OFPFMFC_UNKNOWN;
         }
         else
         {
-            //TODO What todo if version is le than ofprotos?
-            // If 0, then just get ofproto->version +=1?
+            //What todo if version is le than ofprotos? -> Revert the whole thing
+            VLOG_WARN("My: Could not activate staging area due to lower version numer: current(%d) update(%d)", ofproto->tables_version, version);
+            ofproto_flow_mod_revert(ofproto, ofproto->asp_ofm);
+            error = OFPERR_OFPBFC_BAD_VERSION;
         }
-        // TODO if version-if fails, this lets switch crash
-        error = ofproto_flow_mod_start(ofproto, ofproto->asp_ofm);
-        if (!error)
-        {
-            ofproto_bump_tables_version(ofproto);
-            ofproto_flow_mod_finish(ofproto, ofproto->asp_ofm, req);
-            ofmonitor_flush(ofproto->connmgr);
-        }
-
-        asp_unlock_switch(ofproto);
-        VLOG_WARN("My: Commit: Reseting current_xid and _bid to 0\n");
-        ovs_mutex_unlock(&ofproto_mutex);
-
-        return OFPERR_OFPFMFC_UNKNOWN;
     }
+    return error;
 }
 
 static enum ofperr asp_rollback(struct ofproto *ofproto)
@@ -5418,7 +5422,6 @@ ofproto_rule_create(struct ofproto *ofproto, struct cls_rule *cr,
     ovs_mutex_unlock(&rule->mutex);
 
     /* Construct rule, initializing derived state. */
-    //my: Actually creating (not activating!) of the "staging Area"? Dont think so but may this is the overlap / old<->new rules matching error: OFPERR_OFPFMFC_OVERLAP
     error = ofproto->ofproto_class->rule_construct(rule);
     if (error)
     {
@@ -6439,7 +6442,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
         else
         {
             VLOG_WARN("My: Rollback or Commit received but xid(%d) was not current_xid(%d)\n", req->request->xid, ofproto->asp_xid);
-            /*TODO Return of this error code is not part of ASP! Isthis OK? */
+            /* Return of this error code is not part of ASP! Isthis OK? -> Yes authors did the same */
             return OFPERR_OFPBFC_MSG_BAD_XID;
         }
     }
