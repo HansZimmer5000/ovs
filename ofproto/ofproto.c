@@ -370,21 +370,11 @@ static void asp_switch_is_locked()
     //TODO
 }
 
-static void asp_lock_switch()
-{
-    //TODO
-}
-
-static void asp_unlock_switch()
-{
-    //TODO
-}
-
-static enum ofperr asp_vote_lock(bool got_asp_lock, const struct ofp_header *oh, struct ofproto *ofproto, struct ofputil_bundle_add_msg badd)
+static enum ofperr asp_lock_switch(const struct ofp_header *oh, struct ofproto *ofproto, struct ofputil_bundle_add_msg badd)
 {
     enum ofperr error = 0;
-
-    if (got_asp_lock)
+    int got_lock = pthread_mutex_trylock(&xid_read_mutex);
+    if (got_lock == 0 && oh->xid != 0 && ofproto->asp_xid == 0)
     {
         /* Lock Switch by setting current_xid != 0 */
         ofproto->asp_xid = oh->xid;
@@ -395,9 +385,52 @@ static enum ofperr asp_vote_lock(bool got_asp_lock, const struct ofp_header *oh,
     else
     {
         /* return ofperr error since could not read xid due to locked*/
+        VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", ofproto->asp_xid, got_lock);
         pthread_mutex_unlock(&xid_read_mutex);
         error = OFPERR_OFPBFC_MSG_FAILED;
     }
+    return error;
+}
+
+static void asp_unlock_switch()
+{
+    //TODO
+}
+
+static enum ofperr asp_vote_lock(struct ofputil_flow_mod *fm, const struct ofp_header *oh, struct ofproto *ofproto)
+{
+    enum ofperr error = 0;
+
+    if (fm->command == OFPFC_MODIFY_STRICT && fm->table_id == 255)
+    {
+        /* This is the flowmod message to recognize the VoteLock, no further info to process. */
+    }
+    else
+    {
+        /* ASP: Additional check, just in case the xid was already locked which is not an error saved in "error" var. */
+        if (oh->xid == ofproto->asp_xid)
+        {
+            VLOG_WARN("My: init bundle_add flow-mod\n");
+            ofproto->asp_ofm = malloc(sizeof(struct ofproto_flow_mod));
+            error = ofproto_flow_mod_init(ofproto, ofproto->asp_ofm, fm, NULL);
+        }
+    }
+    
+    if(error){
+        //TODO add to asp_vote_lock
+        VLOG_WARN("bundle_add error! Freeing\n");
+        /* ASP VoteLock Fail, free xid again */
+        if (ofproto->asp_xid == oh->xid)
+        {
+            ofproto->asp_xid = 0;
+        }
+
+        /* Set ofm to bmsg so its freed.*/
+        // does not work:
+        //bmsg->ofm = ofproto->asp_ofm;
+        ofproto_flow_mod_uninit(ofproto->asp_ofm);
+    }
+
     return error;
 }
 
@@ -8794,47 +8827,14 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
             VLOG_WARN("My: Bundle Add FlowMod Command: %d with tableid: %d and xid: %d\n", fm.command, fm.table_id, oh->xid);
 
             /* Check if switch is locked or free */
-            int got_lock = pthread_mutex_trylock(&xid_read_mutex);
-            if (got_lock == 0 && oh->xid != 0 && ofproto->asp_xid == 0)
-            {
-                //TODO don't rely upon that when "true" no error is returned -> check if "enum ofperr error" is empty
-                error = asp_vote_lock(true, oh, ofproto, badd);
-                if (error)
-                {
-                    return error;
-                }
-            }
-            else
-            {
-                VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", ofproto->asp_xid, got_lock);
-                //TODO don't rely upon that when "false" an error is returned -> check if "enum ofperr error" is empty
-                error = asp_vote_lock(false, oh, ofproto, badd);
-                if (error)
-                {
-                    return error;
-                }
-            }
+            error = asp_lock_switch(oh, ofproto, badd);
         }
 
         if (!error)
         {
             if (is_asp)
             {
-                //TODO add to asp_vote_lock
-                if (fm.command == OFPFC_MODIFY_STRICT && fm.table_id == 255)
-                {
-                    /**/
-                }
-                else
-                {
-                    /* ASP: Additional check, just in case the xid was already locked which is not an error saved in "error" var. */
-                    if (oh->xid == ofproto->asp_xid)
-                    {
-                        VLOG_WARN("My: init bundle_add flow-mod\n");
-                        ofproto->asp_ofm = malloc(sizeof(struct ofproto_flow_mod));
-                        error = ofproto_flow_mod_init(ofproto, ofproto->asp_ofm, &fm, NULL);
-                    }
-                }
+                error = asp_vote_lock(&fm, oh, ofproto);
             }
             else
             {
@@ -8867,7 +8867,6 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
         OVS_NOT_REACHED();
     }
 
-    //TODO add to asp_vote_lock
     ofpbuf_uninit(&ofpacts);
 
     if (!error && !is_asp)
@@ -8876,26 +8875,9 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
         error = ofp_bundle_add_message(ofconn, badd.bundle_id, badd.flags, bmsg, oh);
     }
 
-    if (error)
+    /* Additional check needed since when asp fails bmsg->ofm is not set and switch crashes! */
+    if ((error && !is_asp) || (error && is_asp &&  error != OFPERR_OFPBFC_MSG_FAILED))
     {
-
-        if (is_asp)
-        {
-            //TODO add to asp_vote_lock
-            VLOG_WARN("bundle_add error! Freeing\n");
-            /* ASP VoteLock Fail, free xid again */
-            if (ofproto->asp_xid == oh->xid)
-            {
-                ofproto->asp_xid = 0;
-            }
-
-            /* Set ofm to bmsg so its freed.*/
-            // does not work:
-            //&bmsg->ofm = current_ofm;
-            ofproto_flow_mod_uninit(ofproto->asp_ofm);
-        }
-
-        //TODO add to asp_vote_lock
         ofp_bundle_entry_free(bmsg);
     }
 
