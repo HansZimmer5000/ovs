@@ -333,15 +333,31 @@ enum asp_types
 };
 
 static enum asp_types
-detect_asp_type(const struct ofputil_flow_mod *fm, const struct openflow_mod_requester *req, struct ofproto *ofproto)
+detect_asp_type_flowmod(const struct ofputil_flow_mod *fm, const struct openflow_mod_requester *req, struct ofproto *ofproto)
 {
-    if (fm->command == OFPFC_DELETE && req->request->xid == ofproto->asp_xid)
+    if (fm->command == OFPFC_MODIFY_STRICT && fm->table_id == 255)
+    {
+        return ASP_VOTELOCK;
+    }
+    else if (fm->command == OFPFC_DELETE && req->request->xid == ofproto->asp_xid)
     {
         return ASP_COMMIT;
     }
     else if (fm->command == OFPFC_DELETE_STRICT && req->request->xid == ofproto->asp_xid)
     {
         return ASP_ROLLBACK;
+    }
+    else
+    {
+        return ASP_UNKOWN;
+    }
+}
+
+static enum asp_types detect_asp_type_bundleadd(struct ofproto *ofproto, const struct ofp_header *oh)
+{
+    if (ofproto->asp_xid == oh->xid)
+    {
+        return ASP_VOTELOCK;
     }
     else
     {
@@ -364,9 +380,25 @@ static void asp_unlock_switch()
     //TODO
 }
 
-static void asp_vote_lock()
+static enum ofperr asp_vote_lock(bool got_asp_lock, const struct ofp_header *oh, struct ofproto *ofproto, struct ofputil_bundle_add_msg badd)
 {
-    //TODO
+    enum ofperr error = 0;
+
+    if (got_asp_lock)
+    {
+        /* Lock Switch by setting current_xid != 0 */
+        ofproto->asp_xid = oh->xid;
+        ofproto->asp_bid = badd.bundle_id;
+        pthread_mutex_unlock(&xid_read_mutex);
+        VLOG_WARN("My: current_xid: %d\n", ofproto->asp_xid);
+    }
+    else
+    {
+        /* return ofperr error since could not read xid due to locked*/
+        pthread_mutex_unlock(&xid_read_mutex);
+        error = OFPERR_OFPBFC_MSG_FAILED;
+    }
+    return error;
 }
 
 static enum ofperr asp_commit(const struct openflow_mod_requester *req, struct ofproto *ofproto)
@@ -6352,20 +6384,16 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     */
     if (is_asp_flowmod(fm))
     {
-        enum asp_types asp_type = detect_asp_type(fm, req, ofproto);
+        enum asp_types asp_type = detect_asp_type_flowmod(fm, req, ofproto);
         if (asp_type == ASP_COMMIT)
         {
-             error = asp_commit(req, ofproto);
-             if (error){
-                 return error;
-             }
+            error = asp_commit(req, ofproto);
+            return error;
         }
         else if (asp_type == ASP_ROLLBACK)
         {
-             error = asp_rollback(ofproto);
-             if (error){
-                 return error;
-             }
+            error = asp_rollback(ofproto);
+            return error;
         }
         else
         {
@@ -8735,7 +8763,8 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
     // TODO Could also check if bundle id == current_bid
 
     VLOG_WARN("My: Received bundle_add with xid (%d), current_xid (%d)", oh->xid, ofproto->asp_xid);
-    if (ofproto->asp_xid == oh->xid)
+    enum asp_types asp_type = detect_asp_type_bundleadd(ofproto, oh);
+    if (asp_type == ASP_VOTELOCK)
     {
         is_asp = 1;
         VLOG_WARN("My: Bundle_add is_asp");
@@ -8757,35 +8786,41 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
                                         ofproto->n_tables);
 
         /* Identify ASP VOTELOCK */
-        if (fm.command == OFPFC_MODIFY_STRICT && fm.table_id == 255)
+        asp_type = detect_asp_type_flowmod(&fm, NULL, ofproto);
+        if (asp_type == ASP_VOTELOCK)
         {
             is_asp = 1;
+
             VLOG_WARN("My: Bundle Add FlowMod Command: %d with tableid: %d and xid: %d\n", fm.command, fm.table_id, oh->xid);
 
             /* Check if switch is locked or free */
             int got_lock = pthread_mutex_trylock(&xid_read_mutex);
             if (got_lock == 0 && oh->xid != 0 && ofproto->asp_xid == 0)
             {
-                /* Lock Switch by setting current_xid != 0 */
-                ofproto->asp_xid = oh->xid;
-                ofproto->asp_bid = badd.bundle_id;
+                //TODO don't rely upon that when "true" no error is returned -> check if "enum ofperr error" is empty
+                error = asp_vote_lock(true, oh, ofproto, badd);
+                if (error)
+                {
+                    return error;
+                }
             }
             else
             {
-                /* return ofperr error since could not read xid due to locked*/
                 VLOG_WARN("My: Lock was already set: xid=%d trylock=%d\n", ofproto->asp_xid, got_lock);
-
-                pthread_mutex_unlock(&xid_read_mutex);
-                return OFPERR_OFPBFC_MSG_FAILED;
+                //TODO don't rely upon that when "false" an error is returned -> check if "enum ofperr error" is empty
+                error = asp_vote_lock(false, oh, ofproto, badd);
+                if (error)
+                {
+                    return error;
+                }
             }
-            pthread_mutex_unlock(&xid_read_mutex);
-            VLOG_WARN("My: current_xid: %d\n", ofproto->asp_xid);
         }
 
         if (!error)
         {
             if (is_asp)
             {
+                //TODO add to asp_vote_lock
                 if (fm.command == OFPFC_MODIFY_STRICT && fm.table_id == 255)
                 {
                     /**/
@@ -8832,6 +8867,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
         OVS_NOT_REACHED();
     }
 
+    //TODO add to asp_vote_lock
     ofpbuf_uninit(&ofpacts);
 
     if (!error && !is_asp)
@@ -8845,6 +8881,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
 
         if (is_asp)
         {
+            //TODO add to asp_vote_lock
             VLOG_WARN("bundle_add error! Freeing\n");
             /* ASP VoteLock Fail, free xid again */
             if (ofproto->asp_xid == oh->xid)
@@ -8858,6 +8895,7 @@ handle_bundle_add(struct ofconn *ofconn, const struct ofp_header *oh)
             ofproto_flow_mod_uninit(ofproto->asp_ofm);
         }
 
+        //TODO add to asp_vote_lock
         ofp_bundle_entry_free(bmsg);
     }
 
